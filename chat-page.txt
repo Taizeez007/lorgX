@@ -1,0 +1,451 @@
+import { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
+import Navbar from "@/components/layout/navbar";
+import Footer from "@/components/layout/footer";
+import { useAuth } from "@/hooks/use-auth";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Loader2, User, Search, Send } from "lucide-react";
+
+interface Message {
+  id: number;
+  content: string;
+  senderId: number;
+  receiverId: number;
+  isRead: boolean;
+  createdAt: string;
+}
+
+interface ChatUser {
+  id: number;
+  fullName: string;
+  username: string;
+  profileImage?: string;
+  lastMessage?: {
+    content: string;
+    createdAt: string;
+    isRead: boolean;
+  };
+}
+
+export default function ChatPage() {
+  const [location] = useLocation();
+  const searchParams = new URLSearchParams(location.search || "");
+  const initialChatUserId = searchParams.get("user");
+  
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(initialChatUserId ? parseInt(initialChatUserId) : null);
+  const [message, setMessage] = useState("");
+  const [chatUsers, setChatUsers] = useState<ChatUser[]>([]);
+  const [chatMessages, setChatMessages] = useState<Message[]>([]);
+  const [wsConnection, setWsConnection] = useState<WebSocket | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  const { user } = useAuth();
+  const { toast } = useToast();
+  
+  // Fetch connections to get chat users
+  const { data: connections, isLoading: isConnectionsLoading } = useQuery({
+    queryKey: ["/api/connections"],
+    enabled: !!user,
+  });
+  
+  // Fetch messages for the selected user
+  const { data: messages, isLoading: isMessagesLoading } = useQuery({
+    queryKey: ["/api/messages", user?.id, selectedUserId],
+    queryFn: async () => {
+      if (!user || !selectedUserId) return [];
+      
+      // Call API to get conversation
+      try {
+        const res = await fetch(`/api/conversations?user1=${user.id}&user2=${selectedUserId}`, {
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error("Failed to fetch messages");
+        return await res.json();
+      } catch (error) {
+        console.error("Error fetching messages:", error);
+        return [];
+      }
+    },
+    enabled: !!user && !!selectedUserId,
+  });
+  
+  // Setup WebSocket connection
+  useEffect(() => {
+    if (!user) return;
+    
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    let socket: WebSocket;
+    
+    try {
+      socket = new WebSocket(wsUrl);
+      
+      socket.onopen = () => {
+        console.log("WebSocket connected");
+        setWsConnection(socket);
+      };
+      
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'chat_message') {
+            const newMessage = data.data;
+            
+            // If the message is part of the current conversation, add it to the chat
+            if (
+              (newMessage.senderId === user.id && newMessage.receiverId === selectedUserId) ||
+              (newMessage.senderId === selectedUserId && newMessage.receiverId === user.id)
+            ) {
+              setChatMessages(prev => [...prev, newMessage]);
+            }
+            
+            // Update the chat users list with new last message
+            setChatUsers(prev => {
+              return prev.map(chatUser => {
+                if (chatUser.id === newMessage.senderId || chatUser.id === newMessage.receiverId) {
+                  return {
+                    ...chatUser,
+                    lastMessage: {
+                      content: newMessage.content,
+                      createdAt: newMessage.createdAt,
+                      isRead: newMessage.isRead,
+                    }
+                  };
+                }
+                return chatUser;
+              });
+            });
+            
+            // If the message is from the other user, mark it as read
+            if (newMessage.senderId === selectedUserId && newMessage.receiverId === user.id) {
+              socket.send(JSON.stringify({
+                type: 'mark_read',
+                data: { messageId: newMessage.id }
+              }));
+            }
+          }
+        } catch (error) {
+          console.error("Error parsing WebSocket message:", error);
+        }
+      };
+      
+      socket.onerror = (error) => {
+        console.error("WebSocket error:", error);
+        toast({
+          title: "Connection error",
+          description: "Failed to connect to chat server",
+          variant: "destructive",
+        });
+      };
+      
+      socket.onclose = () => {
+        console.log("WebSocket closed");
+        setWsConnection(null);
+      };
+    } catch (error) {
+      console.error("Failed to create WebSocket connection:", error);
+      toast({
+        title: "Connection error",
+        description: "Failed to connect to chat server",
+        variant: "destructive",
+      });
+    }
+    
+    return () => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.close();
+      }
+    };
+  }, [user, selectedUserId, toast]);
+  
+  // Process connections to create chat users list
+  useEffect(() => {
+    if (!connections || !user) return;
+    
+    const users: ChatUser[] = connections.map((connection: any) => {
+      const connectionUser = connection.requester?.id === user.id 
+        ? connection.addressee
+        : connection.requester;
+      
+      return {
+        id: connectionUser.id,
+        fullName: connectionUser.fullName,
+        username: connectionUser.username,
+        profileImage: connectionUser.profileImage,
+        // We'll populate last message later from messages
+        lastMessage: undefined
+      };
+    });
+    
+    setChatUsers(users);
+  }, [connections, user]);
+  
+  // Update chat messages when messages data changes
+  useEffect(() => {
+    if (messages) {
+      setChatMessages(messages);
+    }
+  }, [messages]);
+  
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+  
+  // Send message
+  const sendMessage = () => {
+    if (!message.trim() || !wsConnection || !user || !selectedUserId) return;
+    
+    try {
+      wsConnection.send(JSON.stringify({
+        type: 'chat_message',
+        data: {
+          senderId: user.id,
+          receiverId: selectedUserId,
+          content: message.trim()
+        }
+      }));
+      
+      setMessage("");
+    } catch (error) {
+      console.error("Error sending message:", error);
+      toast({
+        title: "Failed to send message",
+        description: "Please try again later",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  // Format time
+  const formatMessageTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+  
+  // Format date for chat list
+  const formatLastMessageDate = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      return formatMessageTime(dateString);
+    } else if (diffDays === 1) {
+      return "Yesterday";
+    } else if (diffDays < 7) {
+      return date.toLocaleDateString([], { weekday: 'short' });
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+  };
+  
+  // Get selected user
+  const selectedUser = chatUsers.find(u => u.id === selectedUserId);
+  
+  if (!user) {
+    return (
+      <div className="flex flex-col min-h-screen">
+        <Navbar />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+  
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      <Navbar />
+      
+      <div className="flex-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <Card className="w-full h-[calc(100vh-16rem)]">
+            <div className="grid grid-cols-1 md:grid-cols-3 h-full">
+              {/* Left sidebar - Contacts */}
+              <div className="border-r border-gray-200">
+                <CardHeader className="p-4">
+                  <CardTitle>Messages</CardTitle>
+                  <div className="mt-2 relative">
+                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-500" />
+                    <Input placeholder="Search contacts" className="pl-8" />
+                  </div>
+                </CardHeader>
+                <Separator />
+                <ScrollArea className="h-[calc(100vh-20rem)]">
+                  {isConnectionsLoading ? (
+                    <div className="flex justify-center items-center h-full">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    </div>
+                  ) : chatUsers.length > 0 ? (
+                    <div className="divide-y">
+                      {chatUsers.map((chatUser) => (
+                        <div 
+                          key={chatUser.id}
+                          className={`p-4 cursor-pointer hover:bg-gray-100 transition-colors ${
+                            selectedUserId === chatUser.id ? 'bg-gray-100' : ''
+                          }`}
+                          onClick={() => setSelectedUserId(chatUser.id)}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                              {chatUser.profileImage ? (
+                                <img 
+                                  src={chatUser.profileImage} 
+                                  alt={chatUser.fullName} 
+                                  className="h-full w-full object-cover" 
+                                />
+                              ) : (
+                                <User className="h-5 w-5 text-gray-500" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between items-baseline">
+                                <h4 className="font-medium text-gray-900 truncate">{chatUser.fullName}</h4>
+                                {chatUser.lastMessage && (
+                                  <span className="text-xs text-gray-500">
+                                    {formatLastMessageDate(chatUser.lastMessage.createdAt)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-gray-600 truncate">
+                                {chatUser.lastMessage ? chatUser.lastMessage.content : 'Start a conversation'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full p-4">
+                      <User className="h-12 w-12 text-gray-400" />
+                      <h3 className="mt-2 text-gray-900 font-medium">No contacts yet</h3>
+                      <p className="text-sm text-gray-600 text-center mt-1">
+                        Connect with others to start chatting
+                      </p>
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+              
+              {/* Right side - Chat */}
+              <div className="col-span-2 flex flex-col h-full">
+                {selectedUserId && selectedUser ? (
+                  <>
+                    {/* Chat header */}
+                    <div className="p-4 border-b border-gray-200 flex items-center space-x-3">
+                      <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                        {selectedUser.profileImage ? (
+                          <img 
+                            src={selectedUser.profileImage} 
+                            alt={selectedUser.fullName} 
+                            className="h-full w-full object-cover" 
+                          />
+                        ) : (
+                          <User className="h-5 w-5 text-gray-500" />
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-gray-900">{selectedUser.fullName}</h3>
+                        <p className="text-xs text-gray-600">@{selectedUser.username}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Chat messages */}
+                    <ScrollArea className="flex-1 p-4">
+                      {isMessagesLoading ? (
+                        <div className="flex justify-center items-center h-full">
+                          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                        </div>
+                      ) : chatMessages.length > 0 ? (
+                        <div className="space-y-4">
+                          {chatMessages.map((msg: Message) => {
+                            const isSender = msg.senderId === user.id;
+                            
+                            return (
+                              <div 
+                                key={msg.id}
+                                className={`flex ${isSender ? 'justify-end' : 'justify-start'}`}
+                              >
+                                <div className={`max-w-[70%] rounded-lg px-4 py-2 ${
+                                  isSender ? 'bg-primary text-white' : 'bg-gray-100 text-gray-900'
+                                }`}>
+                                  <p>{msg.content}</p>
+                                  <div className={`text-xs mt-1 text-right ${
+                                    isSender ? 'text-white/80' : 'text-gray-500'
+                                  }`}>
+                                    {formatMessageTime(msg.createdAt)}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div ref={messagesEndRef} />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full">
+                          <p className="text-gray-600">No messages yet</p>
+                          <p className="text-sm text-gray-500">Send a message to start the conversation</p>
+                        </div>
+                      )}
+                    </ScrollArea>
+                    
+                    {/* Message input */}
+                    <div className="p-4 border-t border-gray-200">
+                      <div className="flex space-x-2">
+                        <Input 
+                          placeholder="Type a message..." 
+                          value={message}
+                          onChange={(e) => setMessage(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              sendMessage();
+                            }
+                          }}
+                        />
+                        <Button 
+                          className="bg-primary"
+                          onClick={sendMessage}
+                          disabled={!message.trim() || !wsConnection}
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+                    <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                      <Send className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-xl font-medium text-gray-900 mb-2">Your Messages</h3>
+                    <p className="text-gray-600 max-w-sm">
+                      Select a contact to start chatting or connect with new people
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+      
+      <Footer />
+    </div>
+  );
+}

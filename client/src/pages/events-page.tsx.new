@@ -1,0 +1,318 @@
+import { useState, useEffect } from "react";
+import { useLocation from "wouter"";
+import Navbar from "@/components/layout/navbar";
+import Footer from "@/components/layout/footer";
+import SidebarLeft from "@/components/layout/sidebar-left";
+import SidebarRight from "@/components/layout/sidebar-right";
+import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
+import { SearchInput } from "@/components/ui/search-input";
+import { Button } from "@/components/ui/button";
+import { Link } from "wouter";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Calendar, MapPin, Users, Bookmark, Star, Tag } from "lucide-react";
+import { Loader2 } from "lucide-react";
+
+export default function EventsPage() {
+  const search = useSearch();
+  const searchParams = new URLSearchParams(search);
+  const filter = searchParams.get("filter") || "all";
+  const categoryId = searchParams.get("category");
+  
+  const [activeTab, setActiveTab] = useState(filter);
+  const [bookmarkedEvents, setBookmarkedEvents] = useState<number[]>([]);
+  const { user } = useAuth();
+  
+  // Update tab when URL filter changes
+  useEffect(() => {
+    setActiveTab(filter);
+  }, [filter]);
+  
+  // Fetch categories
+  const { data: categories } = useQuery({
+    queryKey: ["/api/categories"],
+    enabled: !!user,
+  });
+  
+  // Fetch events based on active tab/filter
+  const { data: events, isLoading: isEventsLoading } = useQuery({
+    queryKey: [`/api/events${activeTab === 'my-events' ? '/user' : ''}`],
+    enabled: !!user,
+  });
+  
+  // Fetch places for the "places" tab
+  const { data: places, isLoading: isPlacesLoading } = useQuery({
+    queryKey: ["/api/places"],
+    enabled: !!user && activeTab === "places",
+  });
+  
+  // If category filter is active, filter events by category
+  const filteredEvents = categoryId && events 
+    ? events.filter((event: any) => event.categoryId === parseInt(categoryId)) 
+    : events;
+  
+  const toggleBookmark = (id: number) => {
+    if (bookmarkedEvents.includes(id)) {
+      setBookmarkedEvents(bookmarkedEvents.filter(eventId => eventId !== id));
+    } else {
+      setBookmarkedEvents([...bookmarkedEvents, id]);
+    }
+  };
+  
+  // Helper function to format date
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+  
+  const renderEventCard = (event: any) => (
+    <div key={event.id} className="bg-white rounded-lg overflow-hidden shadow border border-gray-100">
+      <div className="relative">
+        <div className="h-48 bg-gray-200">
+          {event.imageUrl ? (
+            <img 
+              src={event.imageUrl} 
+              alt={event.title} 
+              className="w-full h-full object-cover" 
+            />
+          ) : (
+            <div className="h-full w-full bg-gray-200 flex items-center justify-center">
+              <span className="text-gray-500">No image</span>
+            </div>
+          )}
+        </div>
+        <div className="absolute top-2 right-2 flex space-x-2">
+          {event.isLive && (
+            <span className="bg-red-500 text-white text-xs rounded px-2 py-1">
+              Live
+            </span>
+          )}
+          <button 
+            className={`bg-white rounded-full p-1.5 shadow ${
+              bookmarkedEvents.includes(event.id) ? 'text-primary' : 'text-gray-600'
+            }`}
+            onClick={() => toggleBookmark(event.id)}
+          >
+            <Bookmark className={`h-4 w-4 ${bookmarkedEvents.includes(event.id) ? 'fill-current' : ''}`} />
+          </button>
+        </div>
+      </div>
+      <div className="p-4">
+        <div className="flex items-center space-x-2 mb-2">
+          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+            {event.categoryName || "Event"}
+          </span>
+          {event.isFree ? (
+            <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">
+              Free
+            </span>
+          ) : (
+            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+              {event.price || "Paid"}
+            </span>
+          )}
+        </div>
+        <h3 className="font-semibold text-gray-900">{event.title}</h3>
+        <div className="mt-2">
+          <div className="flex items-center text-sm text-gray-600 mt-1">
+            <Calendar className="h-4 w-4 mr-1.5 flex-shrink-0" />
+            <span>{formatDate(event.startDate)}</span>
+          </div>
+          <div className="flex items-center text-sm text-gray-600 mt-1">
+            <MapPin className="h-4 w-4 mr-1.5 flex-shrink-0" />
+            <span className="truncate">{event.address || "Location not specified"}</span>
+          </div>
+          <div className="flex items-center text-sm text-gray-600 mt-1">
+            <Users className="h-4 w-4 mr-1.5 flex-shrink-0" />
+            <span>{event.attendeeCount || 0} attending</span>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Link href={`/events/${event.id}`}>
+            <Button className="bg-primary hover:bg-red-600 text-white">
+              View Details
+            </Button>
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+  
+  const renderPlaceCard = (place: any) => (
+    <div key={place.id} className="bg-white rounded-lg overflow-hidden shadow border border-gray-100">
+      <div className="h-48 bg-gray-200">
+        {place.imageUrl ? (
+          <img 
+            src={place.imageUrl} 
+            alt={place.name} 
+            className="w-full h-full object-cover" 
+          />
+        ) : (
+          <div className="h-full w-full bg-gray-200 flex items-center justify-center">
+            <span className="text-gray-500">No image</span>
+          </div>
+        )}
+      </div>
+      <div className="p-4">
+        <h3 className="font-semibold text-gray-900">{place.name}</h3>
+        <div className="flex items-center text-sm text-gray-600 mt-1">
+          <Star className="h-4 w-4 text-yellow-400 mr-1.5" />
+          <span>{place.rating || "4.5"} ({place.reviewCount || "0"} reviews)</span>
+        </div>
+        <div className="flex items-center text-sm text-gray-600 mt-1">
+          <MapPin className="h-4 w-4 mr-1.5" />
+          <span className="truncate">{place.address || "Address not available"}</span>
+        </div>
+        <div className="flex items-center text-sm text-gray-600 mt-1">
+          <Tag className="h-4 w-4 mr-1.5" />
+          <span>{place.placeType || "Event Venue"}</span>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Link href={`/events/places/${place.id}`}>
+            <Button className="bg-primary hover:bg-red-600 text-white">
+              View Details
+            </Button>
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+  
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      <Navbar />
+      
+      <div className="flex-1">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex flex-col md:flex-row space-y-6 md:space-y-0 md:space-x-6">
+            {/* Left Sidebar */}
+            <SidebarLeft />
+            
+            {/* Main Content */}
+            <div className="flex-1 space-y-6">
+              <div className="bg-white rounded-xl shadow-sm p-4">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0">
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    {activeTab === 'places' ? 'Discover Places' : 'Explore Events'}
+                  </h1>
+                  <SearchInput className="w-full md:w-80" />
+                </div>
+              </div>
+              
+              <div className="bg-white rounded-xl shadow-sm p-4">
+                <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
+                  <TabsList className="grid grid-cols-2 md:grid-cols-5 mb-6">
+                    <TabsTrigger value="all">All Events</TabsTrigger>
+                    <TabsTrigger value="featured">Featured</TabsTrigger>
+                    <TabsTrigger value="nearby">Nearby</TabsTrigger>
+                    <TabsTrigger value="my-events">My Events</TabsTrigger>
+                    <TabsTrigger value="places">Places</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="all">
+                    {isEventsLoading ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    ) : filteredEvents && filteredEvents.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredEvents.map((event: any) => renderEventCard(event))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <p className="text-gray-600">No events found</p>
+                        <Link href="/create-event">
+                          <Button className="mt-4 bg-primary">Create an Event</Button>
+                        </Link>
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="featured">
+                    {isEventsLoading ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    ) : filteredEvents && filteredEvents.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredEvents
+                          .filter((event: any) => event.attendeeCount > 0)
+                          .map((event: any) => renderEventCard(event))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <p className="text-gray-600">No featured events</p>
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="nearby">
+                    {isEventsLoading ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    ) : filteredEvents && filteredEvents.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredEvents.slice(0, 6).map((event: any) => renderEventCard(event))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <p className="text-gray-600">No nearby events</p>
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="my-events">
+                    {isEventsLoading ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    ) : filteredEvents && filteredEvents.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {filteredEvents.map((event: any) => renderEventCard(event))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <p className="text-gray-600">You haven't created any events yet</p>
+                        <Link href="/create-event">
+                          <Button className="mt-4 bg-primary">Create an Event</Button>
+                        </Link>
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="places">
+                    {isPlacesLoading ? (
+                      <div className="flex justify-center py-12">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      </div>
+                    ) : places && places.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {places.map((place: any) => renderPlaceCard(place))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <p className="text-gray-600">No places found</p>
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </div>
+            </div>
+            
+            {/* Right Sidebar */}
+            <SidebarRight />
+          </div>
+        </div>
+      </div>
+      
+      <Footer />
+    </div>
+  );
+}
