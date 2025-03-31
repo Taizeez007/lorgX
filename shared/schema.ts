@@ -7,9 +7,12 @@ export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  email: text("email").notNull().unique(),
   fullName: text("full_name").notNull(),
   bio: text("bio"),
   profileImage: text("profile_image"),
+  career: text("career"),
+  preferences: jsonb("preferences"),
   isBusinessAccount: boolean("is_business_account").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -146,6 +149,32 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Business Profiles
+export const businessProfiles = pgTable("business_profiles", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).unique().notNull(),
+  orgName: text("org_name").notNull(),
+  industryType: text("industry_type").notNull(),
+  employeeCount: text("employee_count").notNull(), // Range: "1-10", "11-50", "51-200", "201-500", "501+"
+  foundedYear: integer("founded_year"),
+  website: text("website"),
+  officialEmail: text("official_email").notNull(),
+  logo: text("logo"),
+  coverImage: text("cover_image"),
+  address: text("address"),
+  socialLinks: jsonb("social_links"), // Facebook, Twitter, LinkedIn, etc.
+  verified: boolean("verified").default(false),
+});
+
+// Business Editors (users who can manage a business account)
+export const businessEditors = pgTable("business_editors", {
+  id: serial("id").primaryKey(),
+  businessId: integer("business_id").references(() => businessProfiles.id).notNull(),
+  editorId: integer("editor_id").references(() => users.id).notNull(),
+  role: text("role").notNull().default("editor"), // owner, admin, editor
+  addedAt: timestamp("added_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
@@ -160,6 +189,8 @@ export const insertCommunityMemberSchema = createInsertSchema(communityMembers).
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true, isRead: true });
 export const insertBookingSchema = createInsertSchema(bookings).omit({ id: true, createdAt: true, status: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, isRead: true });
+export const insertBusinessProfileSchema = createInsertSchema(businessProfiles).omit({ id: true, verified: true });
+export const insertBusinessEditorSchema = createInsertSchema(businessEditors).omit({ id: true, addedAt: true });
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -200,3 +231,9 @@ export type InsertBooking = z.infer<typeof insertBookingSchema>;
 
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+
+export type BusinessProfile = typeof businessProfiles.$inferSelect;
+export type InsertBusinessProfile = z.infer<typeof insertBusinessProfileSchema>;
+
+export type BusinessEditor = typeof businessEditors.$inferSelect;
+export type InsertBusinessEditor = z.infer<typeof insertBusinessEditorSchema>;

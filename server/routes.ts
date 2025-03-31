@@ -14,6 +14,8 @@ import {
   InsertMessage,
   InsertBooking,
   InsertComment,
+  InsertBusinessProfile,
+  InsertBusinessEditor,
   insertPostSchema,
   insertEventSchema,
   insertEventPlaceSchema,
@@ -23,7 +25,9 @@ import {
   insertCommunityMemberSchema,
   insertMessageSchema,
   insertBookingSchema,
-  insertCommentSchema
+  insertCommentSchema,
+  insertBusinessProfileSchema,
+  insertBusinessEditorSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { ZodError } from "zod";
@@ -669,6 +673,205 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedBooking);
     } catch (error) {
       console.error("Error updating booking status:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Business Profile API
+  app.get("/api/business-profile/:userId", async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      const profile = await storage.getBusinessProfile(userId);
+      
+      if (!profile) {
+        return res.status(404).json({ message: "Business profile not found" });
+      }
+      
+      res.json(profile);
+    } catch (error) {
+      console.error("Error fetching business profile:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/business-profile", ensureAuthenticated, async (req, res) => {
+    try {
+      const profileData = insertBusinessProfileSchema.parse(req.body);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      // Check if profile already exists
+      const existingProfile = await storage.getBusinessProfile(userId);
+      if (existingProfile) {
+        return res.status(400).json({ message: "User already has a business profile" });
+      }
+      
+      const newBusinessProfile: InsertBusinessProfile = {
+        ...profileData,
+        userId
+      };
+      
+      const profile = await storage.createBusinessProfile(newBusinessProfile);
+      
+      // Update user to set isBusinessAccount to true
+      await storage.updateUser(userId, { isBusinessAccount: true });
+      
+      res.status(201).json(profile);
+    } catch (error) {
+      handleZodError(error, res);
+    }
+  });
+
+  app.put("/api/business-profile/:id", ensureAuthenticated, async (req, res) => {
+    try {
+      const profileId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(profileId)) {
+        return res.status(400).json({ message: "Invalid profile ID" });
+      }
+      
+      // Validate if the user can edit this profile
+      const userBusinesses = await storage.getBusinessesManagedByUser(userId);
+      const canEdit = userBusinesses.some(business => business.id === profileId);
+      
+      if (!canEdit) {
+        return res.status(403).json({ message: "Not authorized to edit this business profile" });
+      }
+      
+      const profileData = insertBusinessProfileSchema.partial().parse(req.body);
+      const updatedProfile = await storage.updateBusinessProfile(profileId, profileData);
+      
+      if (!updatedProfile) {
+        return res.status(404).json({ message: "Business profile not found" });
+      }
+      
+      res.json(updatedProfile);
+    } catch (error) {
+      handleZodError(error, res);
+    }
+  });
+
+  // Business Editors API
+  app.get("/api/business/:businessId/editors", async (req, res) => {
+    try {
+      const businessId = parseInt(req.params.businessId);
+      
+      if (isNaN(businessId)) {
+        return res.status(400).json({ message: "Invalid business ID" });
+      }
+      
+      const editors = await storage.getBusinessEditors(businessId);
+      res.json(editors);
+    } catch (error) {
+      console.error("Error fetching business editors:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.post("/api/business/:businessId/editors", ensureAuthenticated, async (req, res) => {
+    try {
+      const { editorId, role } = req.body;
+      const businessId = parseInt(req.params.businessId);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(businessId)) {
+        return res.status(400).json({ message: "Invalid business ID" });
+      }
+      
+      // Validate if the user is an owner of this business
+      const editors = await storage.getBusinessEditors(businessId);
+      const isOwner = editors.some(editor => 
+        editor.editorId === userId && editor.role === "owner"
+      );
+      
+      if (!isOwner) {
+        return res.status(403).json({ message: "Only owners can add editors" });
+      }
+      
+      const newEditor: InsertBusinessEditor = {
+        businessId,
+        editorId,
+        role: role || "editor"
+      };
+      
+      const editor = await storage.addBusinessEditor(newEditor);
+      res.status(201).json(editor);
+    } catch (error) {
+      console.error("Error adding business editor:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/business/:businessId/editors/:editorId", ensureAuthenticated, async (req, res) => {
+    try {
+      const businessId = parseInt(req.params.businessId);
+      const editorId = parseInt(req.params.editorId);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(businessId) || isNaN(editorId)) {
+        return res.status(400).json({ message: "Invalid business ID or editor ID" });
+      }
+      
+      // Validate if the user is an owner of this business
+      const editors = await storage.getBusinessEditors(businessId);
+      const isOwner = editors.some(editor => 
+        editor.editorId === userId && editor.role === "owner"
+      );
+      
+      if (!isOwner) {
+        return res.status(403).json({ message: "Only owners can remove editors" });
+      }
+      
+      // Don't allow removing the owner
+      const isTargetOwner = editors.some(editor => 
+        editor.editorId === editorId && editor.role === "owner"
+      );
+      
+      if (isTargetOwner) {
+        return res.status(400).json({ message: "Cannot remove the owner" });
+      }
+      
+      await storage.removeBusinessEditor(businessId, editorId);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Error removing business editor:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/user/managed-businesses", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const businesses = await storage.getBusinessesManagedByUser(userId);
+      res.json(businesses);
+    } catch (error) {
+      console.error("Error fetching managed businesses:", error);
       res.status(500).json({ message: "Internal server error" });
     }
   });

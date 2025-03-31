@@ -11,7 +11,9 @@ import {
   communityMembers, type CommunityMember, type InsertCommunityMember,
   messages, type Message, type InsertMessage,
   bookings, type Booking, type InsertBooking,
-  notifications, type Notification, type InsertNotification
+  notifications, type Notification, type InsertNotification,
+  businessProfiles, type BusinessProfile, type InsertBusinessProfile,
+  businessEditors, type BusinessEditor, type InsertBusinessEditor
 } from "@shared/schema";
 
 import session from "express-session";
@@ -99,6 +101,17 @@ export interface IStorage {
   createNotification(notification: InsertNotification): Promise<Notification>;
   markNotificationAsRead(id: number): Promise<void>;
   
+  // Business Profile methods
+  getBusinessProfile(userId: number): Promise<BusinessProfile | undefined>;
+  createBusinessProfile(profile: InsertBusinessProfile): Promise<BusinessProfile>;
+  updateBusinessProfile(id: number, profile: Partial<InsertBusinessProfile>): Promise<BusinessProfile | undefined>;
+  
+  // Business Editor methods
+  getBusinessEditors(businessId: number): Promise<BusinessEditor[]>;
+  addBusinessEditor(editor: InsertBusinessEditor): Promise<BusinessEditor>;
+  removeBusinessEditor(businessId: number, editorId: number): Promise<void>;
+  getBusinessesManagedByUser(userId: number): Promise<BusinessProfile[]>;
+  
   // Session store
   sessionStore: session.SessionStore;
 }
@@ -117,6 +130,8 @@ export class MemStorage implements IStorage {
   private messages: Map<number, Message>;
   private bookings: Map<number, Booking>;
   private notifications: Map<number, Notification>;
+  private businessProfiles: Map<number, BusinessProfile>;
+  private businessEditors: Map<number, BusinessEditor>;
   
   currentUserId: number;
   currentCategoryId: number;
@@ -131,6 +146,8 @@ export class MemStorage implements IStorage {
   currentMessageId: number;
   currentBookingId: number;
   currentNotificationId: number;
+  currentBusinessProfileId: number;
+  currentBusinessEditorId: number;
   sessionStore: session.SessionStore;
 
   constructor() {
@@ -147,6 +164,8 @@ export class MemStorage implements IStorage {
     this.messages = new Map();
     this.bookings = new Map();
     this.notifications = new Map();
+    this.businessProfiles = new Map();
+    this.businessEditors = new Map();
     
     this.currentUserId = 1;
     this.currentCategoryId = 1;
@@ -161,6 +180,8 @@ export class MemStorage implements IStorage {
     this.currentMessageId = 1;
     this.currentBookingId = 1;
     this.currentNotificationId = 1;
+    this.currentBusinessProfileId = 1;
+    this.currentBusinessEditorId = 1;
     
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000, // Clear expired sessions every 24h
@@ -611,6 +632,69 @@ export class MemStorage implements IStorage {
       notification.isRead = true;
       this.notifications.set(id, notification);
     }
+  }
+  
+  // Business Profile methods
+  async getBusinessProfile(userId: number): Promise<BusinessProfile | undefined> {
+    return Array.from(this.businessProfiles.values())
+      .find(profile => profile.userId === userId);
+  }
+  
+  async createBusinessProfile(profile: InsertBusinessProfile): Promise<BusinessProfile> {
+    const id = this.currentBusinessProfileId++;
+    const newProfile: BusinessProfile = { ...profile, id, verified: false };
+    this.businessProfiles.set(id, newProfile);
+    
+    // Add creator as an owner automatically
+    this.addBusinessEditor({
+      businessId: id,
+      editorId: profile.userId,
+      role: "owner"
+    });
+    
+    return newProfile;
+  }
+  
+  async updateBusinessProfile(id: number, profileData: Partial<InsertBusinessProfile>): Promise<BusinessProfile | undefined> {
+    const existingProfile = this.businessProfiles.get(id);
+    if (!existingProfile) return undefined;
+    
+    const updatedProfile = { ...existingProfile, ...profileData };
+    this.businessProfiles.set(id, updatedProfile);
+    return updatedProfile;
+  }
+  
+  // Business Editor methods
+  async getBusinessEditors(businessId: number): Promise<BusinessEditor[]> {
+    return Array.from(this.businessEditors.values())
+      .filter(editor => editor.businessId === businessId);
+  }
+  
+  async addBusinessEditor(editor: InsertBusinessEditor): Promise<BusinessEditor> {
+    const id = this.currentBusinessEditorId++;
+    const addedAt = new Date();
+    const newEditor: BusinessEditor = { ...editor, id, addedAt };
+    this.businessEditors.set(id, newEditor);
+    return newEditor;
+  }
+  
+  async removeBusinessEditor(businessId: number, editorId: number): Promise<void> {
+    const editorEntry = Array.from(this.businessEditors.values())
+      .find(e => e.businessId === businessId && e.editorId === editorId);
+    
+    if (editorEntry) {
+      this.businessEditors.delete(editorEntry.id);
+    }
+  }
+  
+  async getBusinessesManagedByUser(userId: number): Promise<BusinessProfile[]> {
+    const editorEntries = Array.from(this.businessEditors.values())
+      .filter(editor => editor.editorId === userId);
+    
+    return editorEntries.map(entry => {
+      const business = this.businessProfiles.get(entry.businessId);
+      return business!;
+    }).filter(Boolean);
   }
 }
 
