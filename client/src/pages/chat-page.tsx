@@ -41,7 +41,7 @@ interface ChatUser {
 
 export default function ChatPage() {
   const [loc] = useLocation();
-  const searchParams = new URLSearchParams(loc.search || "");
+  const searchParams = new URLSearchParams(typeof loc === 'string' && loc.includes('?') ? loc.split('?')[1] : '');
   const initialChatUserId = searchParams.get("user");
   
   const [selectedUserId, setSelectedUserId] = useState<number | null>(
@@ -57,7 +57,7 @@ export default function ChatPage() {
   const { toast } = useToast();
   
   // Fetch connections to get chat users
-  const { data: connections, isLoading: isConnectionsLoading } = useQuery({
+  const { data: connections = [], isLoading: isConnectionsLoading } = useQuery<any[]>({
     queryKey: ["/api/connections"],
     enabled: !!user,
   });
