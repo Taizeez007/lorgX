@@ -49,23 +49,26 @@ export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [offlineEvents, setOfflineEvents] = useState<any[]>([]);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const { toast } = useToast();
   
   // Fetch all events
   const { data: events, isLoading: isEventsLoading } = useQuery({
     queryKey: ["/api/events"],
-    enabled: activeTab === "all",
+    enabled: activeTab === "all" && !isOfflineMode,
   });
   
   // Fetch upcoming events
   const { data: upcomingEvents, isLoading: isUpcomingLoading } = useQuery({
     queryKey: ["/api/events/upcoming"],
-    enabled: activeTab === "upcoming",
+    enabled: activeTab === "upcoming" && !isOfflineMode,
   });
   
   // Fetch live events
   const { data: liveEvents, isLoading: isLiveLoading } = useQuery({
     queryKey: ["/api/events/live"],
-    enabled: activeTab === "live",
+    enabled: activeTab === "live" && !isOfflineMode,
   });
   
   // Fetch categories for filtering
@@ -73,28 +76,89 @@ export default function EventsPage() {
     queryKey: ["/api/categories"],
   });
   
-  // Format date
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'long', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-  };
+  // Check network status and load offline cache if needed
+  useEffect(() => {
+    const checkNetworkAndLoadCache = async () => {
+      const online = isOnline();
+      setIsOfflineMode(!online);
+      
+      if (!online) {
+        toast({
+          title: "You're offline",
+          description: "Showing cached events from your last visit",
+          variant: "warning",
+        });
+        
+        try {
+          const cachedEvents = await getCachedEvents();
+          setOfflineEvents(cachedEvents);
+        } catch (error) {
+          console.error('Error loading cached events:', error);
+        }
+      } else if (events) {
+        // Cache events for offline use when online
+        try {
+          await cacheEvents(events);
+        } catch (error) {
+          console.error('Error caching events:', error);
+        }
+      }
+    };
+    
+    checkNetworkAndLoadCache();
+    
+    // Listen for online/offline status changes
+    const handleOnline = () => {
+      setIsOfflineMode(false);
+      toast({
+        title: "You're back online",
+        description: "Showing the latest events",
+      });
+    };
+    
+    const handleOffline = () => {
+      setIsOfflineMode(true);
+      toast({
+        title: "You're offline",
+        description: "Showing cached events from your last visit",
+        variant: "warning",
+      });
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [events, toast]);
   
-  // Format time
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit',
-      hour12: true
-    });
-  };
+  // Format date and time using utility functions from utils.ts
+  const { formatDate, formatTime } = (() => {
+    return {
+      formatDate: (dateString: string) => {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { 
+          month: 'long', 
+          day: 'numeric', 
+          year: 'numeric' 
+        });
+      },
+      formatTime: (dateString: string) => {
+        const date = new Date(dateString);
+        return date.toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+    };
+  })();
   
   // Determine which events to show based on active tab
   const getEventsToShow = () => {
+    if (isOfflineMode) return offlineEvents;
     if (activeTab === "upcoming") return upcomingEvents;
     if (activeTab === "live") return liveEvents;
     return events;
@@ -110,12 +174,14 @@ export default function EventsPage() {
     return matchesSearch && matchesCategory;
   });
   
-  // Determine loading state based on active tab
-  const isLoading = activeTab === "upcoming" 
-    ? isUpcomingLoading 
-    : activeTab === "live" 
-      ? isLiveLoading 
-      : isEventsLoading;
+  // Determine loading state based on active tab and offline mode
+  const isLoading = isOfflineMode 
+    ? false 
+    : activeTab === "upcoming" 
+      ? isUpcomingLoading 
+      : activeTab === "live" 
+        ? isLiveLoading 
+        : isEventsLoading;
   
   return (
     <div className="flex flex-col min-h-screen bg-gray-50">
@@ -246,6 +312,9 @@ interface EventsListProps {
 }
 
 function EventsList({ events, isLoading, formatDate, formatTime, categories, isLive }: EventsListProps) {
+  // Check if the user is in offline mode
+  const isOfflineMode = !isOnline();
+  
   if (isLoading) {
     return (
       <div className="flex justify-center py-12">
@@ -259,113 +328,131 @@ function EventsList({ events, isLoading, formatDate, formatTime, categories, isL
       <div className="text-center py-12">
         <Calendar className="h-12 w-12 mx-auto text-gray-400" />
         <h3 className="mt-2 text-lg font-medium text-gray-900">No events found</h3>
-        <p className="mt-1 text-gray-600">Try adjusting your search or filter to find events.</p>
-        <Link href="/create-event">
-          <Button className="mt-4 bg-primary">Create an Event</Button>
-        </Link>
+        <p className="mt-1 text-gray-600">
+          {isOfflineMode 
+            ? "You're offline. Connect to the internet to see more events." 
+            : "Try adjusting your search or filter to find events."}
+        </p>
+        {!isOfflineMode && (
+          <Link href="/create-event">
+            <Button className="mt-4 bg-primary">Create an Event</Button>
+          </Link>
+        )}
       </div>
     );
   }
   
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {events.map((event: any) => {
-        const category = categories?.find((c: any) => c.id === event.categoryId);
-        
-        return (
-          <Card key={event.id} className="overflow-hidden">
-            <div className="h-40 bg-gray-200">
-              {event.imageUrl ? (
-                <img 
-                  src={event.imageUrl} 
-                  alt={event.title} 
-                  className="h-full w-full object-cover" 
-                />
-              ) : (
-                <div className="h-full w-full bg-primary/10 flex items-center justify-center">
-                  <Calendar className="h-10 w-10 text-primary/30" />
-                </div>
-              )}
-              
-              {isLive && (
-                <div className="absolute top-2 right-2">
-                  <Badge className="bg-red-500 text-white border-0 px-2 py-1 flex items-center">
-                    <span className="h-2 w-2 rounded-full bg-white animate-pulse mr-1"></span>
-                    Live
-                  </Badge>
-                </div>
-              )}
-              
-              {event.isVirtual && (
-                <div className="absolute top-2 left-2">
-                  <Badge className="bg-primary text-white border-0">Virtual</Badge>
-                </div>
-              )}
-            </div>
-            
-            <CardHeader className="pb-2">
-              <div className="flex justify-between items-start">
-                <CardTitle className="text-lg">{event.title}</CardTitle>
-                {!event.isPublic && (
-                  <Badge variant="outline" className="border-yellow-500 text-yellow-700">
-                    Private
-                  </Badge>
+      {isOfflineMode ? (
+        // Use OfflineEventCard for offline mode
+        events.map((event: any) => (
+          <OfflineEventCard 
+            key={event.id} 
+            event={event} 
+            isOffline={true} 
+          />
+        ))
+      ) : (
+        // Use regular card layout for online mode
+        events.map((event: any) => {
+          const category = categories?.find((c: any) => c.id === event.categoryId);
+          
+          return (
+            <Card key={event.id} className="overflow-hidden">
+              <div className="h-40 bg-gray-200 relative">
+                {event.imageUrl ? (
+                  <img 
+                    src={event.imageUrl} 
+                    alt={event.title} 
+                    className="h-full w-full object-cover" 
+                  />
+                ) : (
+                  <div className="h-full w-full bg-primary/10 flex items-center justify-center">
+                    <Calendar className="h-10 w-10 text-primary/30" />
+                  </div>
+                )}
+                
+                {isLive && (
+                  <div className="absolute top-2 right-2">
+                    <Badge className="bg-red-500 text-white border-0 px-2 py-1 flex items-center">
+                      <span className="h-2 w-2 rounded-full bg-white animate-pulse mr-1"></span>
+                      Live
+                    </Badge>
+                  </div>
+                )}
+                
+                {event.isVirtual && (
+                  <div className="absolute top-2 left-2">
+                    <Badge className="bg-primary text-white border-0">Virtual</Badge>
+                  </div>
                 )}
               </div>
               
-              {category && (
-                <div className="flex items-center mt-1">
-                  <Tag className="h-3.5 w-3.5 text-gray-500 mr-1" />
-                  <span className="text-sm text-gray-600">{category.name}</span>
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-start">
+                  <CardTitle className="text-lg">{event.title}</CardTitle>
+                  {!event.isPublic && (
+                    <Badge variant="outline" className="border-yellow-500 text-yellow-700">
+                      Private
+                    </Badge>
+                  )}
                 </div>
-              )}
-            </CardHeader>
-            
-            <CardContent className="pb-2 space-y-2">
-              <div className="flex items-center text-sm text-gray-600">
-                <CalendarDays className="h-4 w-4 mr-1.5 text-gray-500" />
-                <span>{formatDate(event.startDate)}</span>
-              </div>
-              
-              <div className="flex items-center text-sm text-gray-600">
-                <Clock className="h-4 w-4 mr-1.5 text-gray-500" />
-                <span>{formatTime(event.startDate)}</span>
-                {event.endDate && (
-                  <span> - {formatTime(event.endDate)}</span>
+                
+                {category && (
+                  <div className="flex items-center mt-1">
+                    <Tag className="h-3.5 w-3.5 text-gray-500 mr-1" />
+                    <span className="text-sm text-gray-600">{category.name}</span>
+                  </div>
                 )}
-              </div>
+              </CardHeader>
               
-              <div className="flex items-center text-sm text-gray-600">
-                <MapPin className="h-4 w-4 mr-1.5 text-gray-500 flex-shrink-0" />
-                <span className="truncate">
-                  {event.isVirtual 
-                    ? 'Online Event' 
-                    : event.address || 'Location not specified'}
-                </span>
-              </div>
+              <CardContent className="pb-2 space-y-2">
+                <div className="flex items-center text-sm text-gray-600">
+                  <CalendarDays className="h-4 w-4 mr-1.5 text-gray-500" />
+                  <span>{formatDate(event.startDate)}</span>
+                </div>
+                
+                <div className="flex items-center text-sm text-gray-600">
+                  <Clock className="h-4 w-4 mr-1.5 text-gray-500" />
+                  <span>{formatTime(event.startDate)}</span>
+                  {event.endDate && (
+                    <span> - {formatTime(event.endDate)}</span>
+                  )}
+                </div>
+                
+                <div className="flex items-center text-sm text-gray-600">
+                  <MapPin className="h-4 w-4 mr-1.5 text-gray-500 flex-shrink-0" />
+                  <span className="truncate">
+                    {event.isVirtual 
+                      ? 'Online Event' 
+                      : event.address || 'Location not specified'}
+                  </span>
+                </div>
+                
+                <div className="flex items-center text-sm text-gray-600">
+                  <Users className="h-4 w-4 mr-1.5 text-gray-500" />
+                  <span>{event.attendeeCount || 0} attending</span>
+                </div>
+                
+                {event.isFree ? (
+                  <Badge className="bg-green-100 text-green-800 border-green-200">Free</Badge>
+                ) : event.price ? (
+                  <Badge className="bg-blue-100 text-blue-800 border-blue-200">
+                    ${event.price.toFixed(2)}
+                  </Badge>
+                ) : null}
+              </CardContent>
               
-              <div className="flex items-center text-sm text-gray-600">
-                <Users className="h-4 w-4 mr-1.5 text-gray-500" />
-                <span>{event.attendeeCount || 0} attending</span>
-              </div>
-              
-              {event.isFree ? (
-                <Badge className="bg-green-100 text-green-800 border-green-200">Free</Badge>
-              ) : event.price ? (
-                <Badge className="bg-blue-100 text-blue-800 border-blue-200">
-                  ${event.price.toFixed(2)}
-                </Badge>
-              ) : null}
-            </CardContent>
-            
-            <CardFooter>
-              <Link href={`/events/${event.id}`}>
-                <Button className="bg-primary">View Details</Button>
-              </Link>
-            </CardFooter>
-          </Card>
-        );
-      })}
+              <CardFooter>
+                <Link href={`/events/${event.id}`}>
+                  <Button className="bg-primary">View Details</Button>
+                </Link>
+              </CardFooter>
+            </Card>
+          );
+        })
+      )}
     </div>
   );
 }

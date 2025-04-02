@@ -1,11 +1,14 @@
-// Utility to handle offline data storage and background sync for the LorgX PWA
-
-const DB_NAME = 'lorgx-offline-db';
+// Constants for IndexedDB
+const DB_NAME = "lorgx_offline_db";
 const DB_VERSION = 1;
-const BOOKINGS_STORE = 'pending-bookings';
-const AUTH_STORE = 'auth-data';
-const EVENT_CACHE_STORE = 'event-cache';
 
+// Store names
+export const EVENT_CACHE_STORE = "event_cache";
+export const BOOKINGS_STORE = "bookings";
+export const AUTH_STORE = "auth_data";
+export const OFFLINE_PAYMENTS_STORE = "offline_payments";
+
+// Define the database schema
 interface DBSchema {
   [BOOKINGS_STORE]: {
     key: string;
@@ -19,215 +22,316 @@ interface DBSchema {
     key: string;
     value: any;
   };
+  [OFFLINE_PAYMENTS_STORE]: {
+    key: string;
+    value: any;
+  };
 }
 
-// Open database connection
-const openDB = async (): Promise<IDBDatabase> => {
+// Open the database
+const openDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onerror = (event) => {
-      console.error('IndexedDB error:', event);
-      reject('Error opening database');
+    request.onerror = () => {
+      console.error("Error opening IndexedDB");
+      reject(request.error);
     };
 
-    request.onsuccess = (event) => {
-      resolve((event.target as IDBOpenDBRequest).result);
+    request.onsuccess = () => {
+      resolve(request.result);
     };
 
+    // Create object stores when the database is first created
     request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
+      const db = request.result;
       
-      // Create object stores if they don't exist
-      if (!db.objectStoreNames.contains(BOOKINGS_STORE)) {
-        db.createObjectStore(BOOKINGS_STORE, { keyPath: 'id', autoIncrement: true });
-      }
-
-      if (!db.objectStoreNames.contains(AUTH_STORE)) {
-        db.createObjectStore(AUTH_STORE, { keyPath: 'key' });
-      }
-
+      // Create stores if they don't exist
       if (!db.objectStoreNames.contains(EVENT_CACHE_STORE)) {
-        const eventStore = db.createObjectStore(EVENT_CACHE_STORE, { keyPath: 'id' });
-        eventStore.createIndex('categoryId', 'categoryId', { unique: false });
-        eventStore.createIndex('date', 'startDate', { unique: false });
+        db.createObjectStore(EVENT_CACHE_STORE, { keyPath: "id" });
+      }
+      
+      if (!db.objectStoreNames.contains(BOOKINGS_STORE)) {
+        db.createObjectStore(BOOKINGS_STORE, { keyPath: "id" });
+      }
+      
+      if (!db.objectStoreNames.contains(AUTH_STORE)) {
+        db.createObjectStore(AUTH_STORE, { keyPath: "id" });
+      }
+      
+      if (!db.objectStoreNames.contains(OFFLINE_PAYMENTS_STORE)) {
+        db.createObjectStore(OFFLINE_PAYMENTS_STORE, { keyPath: "id" });
       }
     };
   });
 };
 
-// Generic function to add an item to any store
+/**
+ * Add an item to a store
+ * @param storeName The name of the store
+ * @param item The item to add
+ * @returns A promise that resolves to the added item
+ */
 export const addItem = async <T>(storeName: keyof DBSchema, item: T): Promise<T> => {
   const db = await openDB();
+  
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readwrite');
+    const transaction = db.transaction(storeName, "readwrite");
     const store = transaction.objectStore(storeName);
     const request = store.add(item);
-
+    
     request.onsuccess = () => {
       resolve(item);
     };
-
-    request.onerror = (event) => {
-      console.error(`Error adding item to ${storeName}:`, event);
-      reject(`Error adding item to ${storeName}`);
+    
+    request.onerror = () => {
+      console.error(`Error adding item to ${storeName}`, request.error);
+      reject(request.error);
     };
-
-    transaction.oncomplete = () => db.close();
+    
+    transaction.oncomplete = () => {
+      db.close();
+    };
   });
 };
 
-// Generic function to get all items from a store
+/**
+ * Get all items from a store
+ * @param storeName The name of the store
+ * @returns A promise that resolves to an array of items
+ */
 export const getAllItems = async <T>(storeName: keyof DBSchema): Promise<T[]> => {
   const db = await openDB();
+  
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readonly');
+    const transaction = db.transaction(storeName, "readonly");
     const store = transaction.objectStore(storeName);
     const request = store.getAll();
-
+    
     request.onsuccess = () => {
-      resolve(request.result as T[]);
+      resolve(request.result);
     };
-
-    request.onerror = (event) => {
-      console.error(`Error getting items from ${storeName}:`, event);
-      reject(`Error getting items from ${storeName}`);
+    
+    request.onerror = () => {
+      console.error(`Error getting items from ${storeName}`, request.error);
+      reject(request.error);
     };
-
-    transaction.oncomplete = () => db.close();
+    
+    transaction.oncomplete = () => {
+      db.close();
+    };
   });
 };
 
-// Generic function to get a single item from a store
+/**
+ * Get an item from a store by key
+ * @param storeName The name of the store
+ * @param key The key to look up
+ * @returns A promise that resolves to the item or null if not found
+ */
 export const getItem = async <T>(storeName: keyof DBSchema, key: string | number): Promise<T | null> => {
   const db = await openDB();
+  
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readonly');
+    const transaction = db.transaction(storeName, "readonly");
     const store = transaction.objectStore(storeName);
     const request = store.get(key);
-
+    
     request.onsuccess = () => {
-      resolve(request.result as T || null);
+      resolve(request.result || null);
     };
-
-    request.onerror = (event) => {
-      console.error(`Error getting item from ${storeName}:`, event);
-      reject(`Error getting item from ${storeName}`);
+    
+    request.onerror = () => {
+      console.error(`Error getting item from ${storeName}`, request.error);
+      reject(request.error);
     };
-
-    transaction.oncomplete = () => db.close();
+    
+    transaction.oncomplete = () => {
+      db.close();
+    };
   });
 };
 
-// Generic function to update an item in a store
+/**
+ * Update an item in a store
+ * @param storeName The name of the store
+ * @param item The item to update
+ * @returns A promise that resolves to the updated item
+ */
 export const updateItem = async <T>(storeName: keyof DBSchema, item: T): Promise<T> => {
   const db = await openDB();
+  
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readwrite');
+    const transaction = db.transaction(storeName, "readwrite");
     const store = transaction.objectStore(storeName);
     const request = store.put(item);
-
+    
     request.onsuccess = () => {
       resolve(item);
     };
-
-    request.onerror = (event) => {
-      console.error(`Error updating item in ${storeName}:`, event);
-      reject(`Error updating item in ${storeName}`);
+    
+    request.onerror = () => {
+      console.error(`Error updating item in ${storeName}`, request.error);
+      reject(request.error);
     };
-
-    transaction.oncomplete = () => db.close();
+    
+    transaction.oncomplete = () => {
+      db.close();
+    };
   });
 };
 
-// Generic function to delete an item from a store
+/**
+ * Delete an item from a store
+ * @param storeName The name of the store
+ * @param key The key to delete
+ */
 export const deleteItem = async (storeName: keyof DBSchema, key: string | number): Promise<void> => {
   const db = await openDB();
+  
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, 'readwrite');
+    const transaction = db.transaction(storeName, "readwrite");
     const store = transaction.objectStore(storeName);
     const request = store.delete(key);
-
+    
     request.onsuccess = () => {
       resolve();
     };
-
-    request.onerror = (event) => {
-      console.error(`Error deleting item from ${storeName}:`, event);
-      reject(`Error deleting item from ${storeName}`);
+    
+    request.onerror = () => {
+      console.error(`Error deleting item from ${storeName}`, request.error);
+      reject(request.error);
     };
-
-    transaction.oncomplete = () => db.close();
+    
+    transaction.oncomplete = () => {
+      db.close();
+    };
   });
 };
 
-// Function to save authentication data
+/**
+ * Save auth data for offline use
+ * @param userData User data to be cached
+ */
 export const saveAuthData = async (userData: any): Promise<void> => {
-  await updateItem(AUTH_STORE, { key: 'currentUser', value: userData });
+  try {
+    await addItem(AUTH_STORE, {
+      id: "current_user",
+      value: userData,
+      timestamp: Date.now()
+    });
+    console.log("User data cached for offline use");
+  } catch (error) {
+    console.error("Failed to cache user data:", error);
+  }
 };
 
-// Function to get authentication data
+/**
+ * Get cached auth data
+ * @returns Cached user data or null if not found
+ */
 export const getAuthData = async (): Promise<any | null> => {
   try {
-    const data = await getItem(AUTH_STORE, 'currentUser');
-    return data ? data.value : null;
+    const cachedData = await getItem(AUTH_STORE, "current_user");
+    return cachedData ? cachedData.value : null;
   } catch (error) {
-    console.error('Error getting auth data:', error);
+    console.error("Failed to retrieve cached user data:", error);
     return null;
   }
 };
 
-// Function to clear authentication data (logout)
+/**
+ * Clear cached auth data
+ */
 export const clearAuthData = async (): Promise<void> => {
   try {
-    await deleteItem(AUTH_STORE, 'currentUser');
+    await deleteItem(AUTH_STORE, "current_user");
+    console.log("Cached user data cleared");
   } catch (error) {
-    console.error('Error clearing auth data:', error);
+    console.error("Failed to clear cached user data:", error);
   }
 };
 
-// Function to save a booking for offline processing
+/**
+ * Save a booking for offline processing
+ * @param bookingData The booking data to save
+ */
 export const saveOfflineBooking = async (bookingData: any): Promise<void> => {
   try {
     await addItem(BOOKINGS_STORE, {
       ...bookingData,
+      id: `offline-booking-${Date.now()}`,
       createdAt: new Date(),
       status: 'pending',
-      isSynced: false
+      synced: false
     });
     
-    // Request background sync if available
+    // Try to register background sync
     if ('serviceWorker' in navigator && 'SyncManager' in window) {
       const registration = await navigator.serviceWorker.ready;
-      await registration.sync.register('sync-bookings');
+      registration.sync.register('sync-bookings');
     }
+    
+    console.log("Booking saved for offline processing");
   } catch (error) {
-    console.error('Error saving offline booking:', error);
+    console.error("Failed to save offline booking:", error);
   }
 };
 
-// Function to check if there are pending offline bookings
+/**
+ * Save payment information for offline processing
+ * @param paymentData The payment data to save
+ */
+export const saveOfflinePayment = async (paymentData: any): Promise<void> => {
+  try {
+    await addItem(OFFLINE_PAYMENTS_STORE, {
+      ...paymentData,
+      id: `offline-payment-${Date.now()}`,
+      createdAt: new Date(),
+      processed: false
+    });
+    
+    // Try to register background sync
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      const registration = await navigator.serviceWorker.ready;
+      registration.sync.register('sync-payments');
+    }
+    
+    console.log("Payment saved for offline processing");
+  } catch (error) {
+    console.error("Failed to save offline payment:", error);
+  }
+};
+
+/**
+ * Check if there are any pending bookings
+ * @returns True if there are pending bookings
+ */
 export const hasPendingBookings = async (): Promise<boolean> => {
   try {
     const bookings = await getAllItems(BOOKINGS_STORE);
-    return bookings.length > 0;
+    return bookings && bookings.length > 0;
   } catch (error) {
-    console.error('Error checking pending bookings:', error);
+    console.error("Failed to check for pending bookings:", error);
     return false;
   }
 };
 
-// Function to cache events for offline viewing
+/**
+ * Cache events for offline browsing
+ * @param events Array of events to cache
+ */
 export const cacheEvents = async (events: any[]): Promise<void> => {
   try {
+    // Clear existing cache first to prevent duplicates
     const db = await openDB();
-    const transaction = db.transaction(EVENT_CACHE_STORE, 'readwrite');
+    const transaction = db.transaction(EVENT_CACHE_STORE, "readwrite");
     const store = transaction.objectStore(EVENT_CACHE_STORE);
     
-    // Clear old cache
+    // Clear all events
     store.clear();
     
-    // Add new events to cache
+    // Add all events
     for (const event of events) {
       store.add({
         ...event,
@@ -235,59 +339,52 @@ export const cacheEvents = async (events: any[]): Promise<void> => {
       });
     }
     
-    await new Promise<void>((resolve, reject) => {
-      transaction.oncomplete = () => {
-        db.close();
-        resolve();
-      };
-      transaction.onerror = () => {
-        db.close();
-        reject();
-      };
-    });
+    transaction.oncomplete = () => {
+      console.log(`Cached ${events.length} events for offline browsing`);
+      db.close();
+    };
+    
+    transaction.onerror = () => {
+      console.error("Failed to cache events:", transaction.error);
+      db.close();
+    };
   } catch (error) {
-    console.error('Error caching events:', error);
+    console.error("Failed to cache events:", error);
   }
 };
 
-// Function to get cached events
+/**
+ * Get cached events for offline browsing
+ * @returns Array of cached events
+ */
 export const getCachedEvents = async (): Promise<any[]> => {
   try {
     return await getAllItems(EVENT_CACHE_STORE);
   } catch (error) {
-    console.error('Error getting cached events:', error);
+    console.error("Failed to retrieve cached events:", error);
     return [];
   }
 };
 
-// Function to get cached events by category
+/**
+ * Get cached events filtered by category
+ * @param categoryId The category ID to filter by
+ * @returns Array of cached events in the specified category
+ */
 export const getCachedEventsByCategory = async (categoryId: number): Promise<any[]> => {
   try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(EVENT_CACHE_STORE, 'readonly');
-      const store = transaction.objectStore(EVENT_CACHE_STORE);
-      const index = store.index('categoryId');
-      const request = index.getAll(categoryId);
-      
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-      
-      request.onerror = (event) => {
-        console.error('Error getting events by category:', event);
-        reject([]);
-      };
-      
-      transaction.oncomplete = () => db.close();
-    });
+    const events = await getAllItems(EVENT_CACHE_STORE);
+    return events.filter(event => event.categoryId === categoryId);
   } catch (error) {
-    console.error('Error getting cached events by category:', error);
+    console.error("Failed to retrieve cached events by category:", error);
     return [];
   }
 };
 
-// Check if we're online
+/**
+ * Check if the device is currently online
+ * @returns True if the device is online
+ */
 export const isOnline = (): boolean => {
   return navigator.onLine;
 };

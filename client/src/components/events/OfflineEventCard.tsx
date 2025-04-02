@@ -1,13 +1,16 @@
 import React from 'react';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Calendar, Clock, MapPin, Wifi, WifiOff } from "lucide-react";
-import { formatDate } from "@/lib/utils";
-import { useOfflineBooking } from '@/hooks/use-offline-booking';
-import { useAuth } from '@/hooks/use-auth';
-import { useToast } from '@/hooks/use-toast';
-import { useOfflineAuth } from '@/hooks/use-offline-auth';
+import { Link } from 'wouter';
+import { 
+  Card, 
+  CardContent, 
+  CardFooter, 
+  CardHeader, 
+  CardTitle 
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Calendar, MapPin, Users, Clock, WifiOff, Download } from 'lucide-react';
+import { formatDate, formatTime } from '@/lib/utils';
 
 interface OfflineEventCardProps {
   event: any;
@@ -15,97 +18,98 @@ interface OfflineEventCardProps {
 }
 
 export function OfflineEventCard({ event, isOffline = false }: OfflineEventCardProps) {
-  const { bookingMutation } = useOfflineBooking();
-  const { user } = useAuth();
-  const { cachedUser, offlineMode } = useOfflineAuth();
-  const { toast } = useToast();
-  
-  const activeUser = user || cachedUser;
-  const isUserOffline = offlineMode && !user;
-
-  const handleBookEvent = () => {
-    if (!activeUser) {
-      toast({
-        title: "Authentication required",
-        description: isUserOffline 
-          ? "You're currently offline. Please log in when you're back online."
-          : "Please log in to book events.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const bookingData = {
-      eventId: event.id,
-      userId: activeUser.id,
-      status: 'pending',
-      numberOfTickets: 1,
-      paymentStatus: event.isFree ? 'free' : 'pending',
-    };
-
-    bookingMutation.mutate(bookingData);
-  };
-
   return (
-    <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg">
-      {event.imageUrl && (
-        <div className="h-48 w-full overflow-hidden">
-          <img 
-            src={event.imageUrl} 
-            alt={event.title} 
-            className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
-          />
-        </div>
-      )}
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-start">
-          <CardTitle className="text-xl font-bold">{event.title}</CardTitle>
-          {isOffline && (
-            <Badge variant="outline" className="flex items-center gap-1 bg-amber-100">
-              <WifiOff size={14} /> Cached
-            </Badge>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2 mt-2">
-          {event.categoryName && (
-            <Badge variant="secondary">{event.categoryName}</Badge>
-          )}
-          {event.isFree ? (
-            <Badge variant="default" className="bg-green-600">Free</Badge>
-          ) : (
-            <Badge variant="default" className="bg-blue-600">
-              {event.price ? `$${event.price}` : 'Paid'}
-            </Badge>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        <p className="text-sm text-muted-foreground line-clamp-2">
-          {event.description || "No description available."}
-        </p>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Calendar size={16} />
-          <span>{formatDate(new Date(event.startDate))}</span>
-        </div>
-        {event.startTime && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Clock size={16} />
-            <span>{event.startTime} - {event.endTime || 'TBD'}</span>
+    <Card className="h-full flex flex-col overflow-hidden group hover:shadow-md transition-shadow">
+      <div className="relative">
+        {isOffline && (
+          <Badge 
+            variant="secondary" 
+            className="absolute top-2 right-2 z-10 bg-amber-100 text-amber-800 border-amber-200 flex items-center gap-1"
+          >
+            <WifiOff className="h-3 w-3" />
+            Offline
+          </Badge>
+        )}
+        
+        {event.imageUrl ? (
+          <div className="aspect-video w-full overflow-hidden">
+            <img 
+              src={event.imageUrl} 
+              alt={event.title} 
+              className="w-full h-full object-cover transition-transform group-hover:scale-105"
+            />
+          </div>
+        ) : (
+          <div className="aspect-video w-full bg-gradient-to-r from-blue-100 to-indigo-100 flex items-center justify-center">
+            <Calendar className="h-12 w-12 text-blue-400" />
           </div>
         )}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <MapPin size={16} />
-          <span className="truncate">{event.address || event.location || 'Online'}</span>
+      </div>
+      
+      <CardHeader className="pb-2">
+        <div className="flex justify-between items-start">
+          <CardTitle className="text-lg line-clamp-2">{event.title}</CardTitle>
+          {event.isFree ? (
+            <Badge variant="secondary" className="bg-green-100 text-green-800 border-green-200">Free</Badge>
+          ) : (
+            <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200">
+              ${event.price?.toFixed(2) || '9.99'}
+            </Badge>
+          )}
+        </div>
+        
+        {event.categoryName && (
+          <Badge variant="outline" className="mt-1 w-fit">
+            {event.categoryName}
+          </Badge>
+        )}
+      </CardHeader>
+      
+      <CardContent className="pb-3 flex-grow">
+        <div className="space-y-2 text-sm">
+          <div className="flex items-start">
+            <Calendar className="h-4 w-4 mr-2 mt-0.5 text-gray-500" />
+            <span>{formatDate(new Date(event.startDate))}</span>
+          </div>
+          
+          <div className="flex items-start">
+            <Clock className="h-4 w-4 mr-2 mt-0.5 text-gray-500" />
+            <span>{formatTime(new Date(event.startDate))}</span>
+          </div>
+          
+          {event.address && (
+            <div className="flex items-start">
+              <MapPin className="h-4 w-4 mr-2 mt-0.5 text-gray-500" />
+              <span className="line-clamp-1">{event.address}</span>
+            </div>
+          )}
+          
+          {event.attendeeCount !== undefined && (
+            <div className="flex items-start">
+              <Users className="h-4 w-4 mr-2 mt-0.5 text-gray-500" />
+              <span>
+                {event.attendeeCount} {event.attendeeCount === 1 ? 'attendee' : 'attendees'}
+                {event.maxAttendees && ` / ${event.maxAttendees}`}
+              </span>
+            </div>
+          )}
         </div>
       </CardContent>
+      
       <CardFooter className="pt-0">
-        <Button 
-          onClick={handleBookEvent} 
-          className="w-full"
-          disabled={bookingMutation.isPending}
-        >
-          {bookingMutation.isPending ? 'Processing...' : 'Book Now'}
-        </Button>
+        <div className="w-full flex gap-2">
+          <Button asChild className="w-full">
+            <Link to={`/events/${event.id}`}>
+              View Details
+            </Link>
+          </Button>
+          
+          {isOffline && (
+            <Button variant="outline" size="icon" title="Sync this event">
+              <Download className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </CardFooter>
     </Card>
   );

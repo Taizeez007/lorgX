@@ -1,139 +1,216 @@
-import { useState, useCallback } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { useState, useEffect, useCallback } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { 
-  saveOfflineBooking, 
-  hasPendingBookings, 
-  isOnline 
+  addItem, 
+  getAllItems, 
+  isOnline,
+  deleteItem
 } from '@/lib/offline-storage';
 
-export function useOfflineBooking() {
-  const { toast } = useToast();
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-  const [hasPending, setHasPending] = useState(false);
-  const queryClient = useQueryClient();
+// Interface for the hook's return value
+interface OfflineBookingHook {
+  pendingBookings: any[];
+  pendingPayments: any[];
+  hasPendingData: boolean;
+  isSyncing: boolean;
+  syncAllPendingData: () => Promise<void>;
+  isOnline: boolean;
+}
 
-  // Check for pending bookings
-  const checkPendingBookings = useCallback(async () => {
-    const pending = await hasPendingBookings();
-    setHasPending(pending);
-    return pending;
+export function useOfflineBooking(): OfflineBookingHook {
+  const [pendingBookings, setPendingBookings] = useState<any[]>([]);
+  const [pendingPayments, setPendingPayments] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [networkStatus, setNetworkStatus] = useState(isOnline());
+  const { toast } = useToast();
+
+  // Load pending data from IndexedDB
+  const loadPendingData = useCallback(async () => {
+    try {
+      const bookings = await getAllItems("bookings");
+      const payments = await getAllItems("offline-payments");
+      
+      setPendingBookings(bookings || []);
+      setPendingPayments(payments || []);
+    } catch (error) {
+      console.error('Error loading pending offline data:', error);
+    }
   }, []);
 
-  // On mount and when online status changes
-  useState(() => {
-    checkPendingBookings();
-
-    const handleOnline = () => {
-      setIsOffline(false);
-      // When coming back online, trigger background sync
-      if ('serviceWorker' in navigator && 'SyncManager' in window) {
-        navigator.serviceWorker.ready
-          .then(registration => {
-            registration.sync.register('sync-bookings');
-          })
-          .catch(err => console.error('Background sync registration failed:', err));
+  // Register service worker for background sync
+  const registerSyncEvents = useCallback(async () => {
+    if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        
+        // Register background sync for bookings and payments
+        registration.sync.register('sync-bookings');
+        registration.sync.register('sync-payments');
+      } catch (error) {
+        console.error('Background sync registration failed:', error);
       }
-    };
+    }
+  }, []);
 
-    const handleOffline = () => {
-      setIsOffline(true);
-    };
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, [checkPendingBookings]);
-
-  // Mutation for creating a booking that works offline
-  const bookingMutation = useMutation({
-    mutationFn: async (bookingData: any) => {
-      if (!isOnline()) {
-        // If offline, save booking for later syncing
-        await saveOfflineBooking(bookingData);
-        throw new Error('OFFLINE_BOOKING');
-      } else {
-        // If online, proceed with API request
-        const res = await apiRequest('POST', '/api/booking', bookingData);
-        return await res.json();
-      }
-    },
-    onSuccess: () => {
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['/api/bookings'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/events'] });
-      
-      toast({
-        title: "Booking successful",
-        description: "Your event has been booked successfully.",
-      });
-    },
-    onError: (error: Error) => {
-      if (error.message === 'OFFLINE_BOOKING') {
-        // This is an expected "error" when offline
-        setHasPending(true);
-        toast({
-          title: "Offline booking saved",
-          description: "Your booking will be processed when you're back online.",
-        });
-      } else {
-        toast({
-          title: "Booking failed",
-          description: error.message,
-          variant: "destructive",
-        });
-      }
-    },
-  });
-
-  // Explicitly attempt to sync pending bookings
-  const syncPendingBookings = useCallback(async () => {
+  // Sync all pending data manually
+  const syncAllPendingData = async () => {
     if (!isOnline()) {
       toast({
-        title: "You're offline",
-        description: "Please connect to the internet to sync your bookings.",
-        variant: "destructive",
+        title: 'You are offline',
+        description: 'Please connect to the internet to sync your data',
+        variant: 'destructive',
       });
       return;
     }
 
-    if ('serviceWorker' in navigator && 'SyncManager' in window) {
-      try {
-        const registration = await navigator.serviceWorker.ready;
-        await registration.sync.register('sync-bookings');
-        toast({
-          title: "Sync initiated",
-          description: "Your pending bookings are being processed.",
-        });
-        // Re-check after a moment to see if sync was successful
-        setTimeout(checkPendingBookings, 2000);
-      } catch (err) {
-        console.error('Error initiating sync:', err);
-        toast({
-          title: "Sync failed",
-          description: "Could not sync your bookings. Please try again later.",
-          variant: "destructive",
-        });
+    setIsSyncing(true);
+
+    try {
+      // Process pending bookings
+      for (const booking of pendingBookings) {
+        try {
+          // Send booking to server
+          const response = await fetch('/api/bookings', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(booking),
+          });
+
+          if (response.ok) {
+            // Remove from IndexedDB if successful
+            await deleteItem("bookings", booking.id);
+          }
+        } catch (error) {
+          console.error('Error syncing booking:', error);
+        }
       }
-    } else {
+
+      // Process pending payments
+      for (const payment of pendingPayments) {
+        try {
+          // Send payment to server
+          const response = await fetch('/api/payments/complete', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payment),
+          });
+
+          if (response.ok) {
+            // Remove from IndexedDB if successful
+            await deleteItem("offline-payments", payment.id);
+          }
+        } catch (error) {
+          console.error('Error syncing payment:', error);
+        }
+      }
+
+      // Reload pending data
+      await loadPendingData();
+
       toast({
-        title: "Sync not supported",
-        description: "Your browser doesn't support background synchronization.",
-        variant: "destructive",
+        title: 'Sync Complete',
+        description: 'Your bookings and payments have been synchronized',
+      });
+    } catch (error) {
+      toast({
+        title: 'Sync Failed',
+        description: 'Failed to synchronize your data. Please try again later.',
+        variant: 'destructive',
+      });
+      console.error('Error during sync:', error);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Save a booking locally when offline
+  const saveOfflineBooking = async (bookingData: any) => {
+    try {
+      await addItem("bookings", {
+        ...bookingData,
+        id: `offline-booking-${Date.now()}`,
+        createdAt: new Date(),
+        status: 'pending',
+        synced: false
+      });
+      
+      toast({
+        title: 'Booking Saved Offline',
+        description: 'Your booking will be processed once you are back online',
+      });
+      
+      await loadPendingData();
+    } catch (error) {
+      console.error('Error saving offline booking:', error);
+      toast({
+        title: 'Error Saving Booking',
+        description: 'Failed to save your booking offline',
+        variant: 'destructive',
       });
     }
-  }, [isOffline, toast, checkPendingBookings]);
+  };
+
+  // Save payment information locally when offline
+  const saveOfflinePayment = async (paymentData: any) => {
+    try {
+      await addItem("offline-payments", {
+        ...paymentData,
+        id: `offline-payment-${Date.now()}`,
+        createdAt: new Date(),
+        processed: false
+      });
+      
+      toast({
+        title: 'Payment Saved Offline',
+        description: 'Your payment will be processed once you are back online',
+      });
+      
+      await loadPendingData();
+    } catch (error) {
+      console.error('Error saving offline payment:', error);
+      toast({
+        title: 'Error Saving Payment',
+        description: 'Failed to save your payment offline',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Check network status and load pending data on mount
+  useEffect(() => {
+    loadPendingData();
+    registerSyncEvents();
+    
+    // Add event listeners for online/offline status
+    const handleOnline = () => {
+      setNetworkStatus(true);
+      // Optionally auto-sync when going online
+      // syncAllPendingData();
+    };
+    
+    const handleOffline = () => {
+      setNetworkStatus(false);
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [loadPendingData, registerSyncEvents]);
 
   return {
-    bookingMutation,
-    isOffline,
-    hasPending,
-    syncPendingBookings,
-    checkPendingBookings,
+    pendingBookings,
+    pendingPayments,
+    hasPendingData: pendingBookings.length > 0 || pendingPayments.length > 0,
+    isSyncing,
+    syncAllPendingData,
+    isOnline: networkStatus
   };
 }
