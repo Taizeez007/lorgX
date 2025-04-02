@@ -252,6 +252,35 @@ export const postShares = pgTable("post_shares", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Blocked users
+export const blockedUsers = pgTable("blocked_users", {
+  id: serial("id").primaryKey(),
+  blockerId: integer("blocker_id").references(() => users.id).notNull(),
+  blockedId: integer("blocked_id").references(() => users.id).notNull(),
+  reason: text("reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Admin users (for support team)
+export const adminUsers = pgTable("admin_users", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull().unique(),
+  role: text("role").notNull(), // admin, super_admin
+  assignedAt: timestamp("assigned_at").defaultNow(),
+  assignedBy: integer("assigned_by").references(() => users.id),
+});
+
+// Unblock requests
+export const unblockRequests = pgTable("unblock_requests", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  reason: text("reason").notNull(),
+  status: text("status").notNull().default("pending"), // pending, approved, rejected
+  createdAt: timestamp("created_at").defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: integer("resolved_by").references(() => users.id),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, isDeleted: true, deleteRequestedAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
@@ -324,10 +353,22 @@ export const insertEventLikeSchema = createInsertSchema(eventLikes).omit({ id: t
 export const insertSavedEventSchema = createInsertSchema(savedEvents).omit({ id: true, createdAt: true });
 export const insertSavedPlaceSchema = createInsertSchema(savedPlaces).omit({ id: true, createdAt: true });
 export const insertPostShareSchema = createInsertSchema(postShares).omit({ id: true, createdAt: true });
+export const insertBlockedUserSchema = createInsertSchema(blockedUsers).omit({ id: true, createdAt: true });
+export const insertAdminUserSchema = createInsertSchema(adminUsers).omit({ id: true, assignedAt: true });
+export const insertUnblockRequestSchema = createInsertSchema(unblockRequests).omit({ id: true, createdAt: true, resolvedAt: true, resolvedBy: true, status: true });
 
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+
+export type BlockedUser = typeof blockedUsers.$inferSelect;
+export type InsertBlockedUser = z.infer<typeof insertBlockedUserSchema>;
+
+export type AdminUser = typeof adminUsers.$inferSelect;
+export type InsertAdminUser = z.infer<typeof insertAdminUserSchema>;
+
+export type UnblockRequest = typeof unblockRequests.$inferSelect;
+export type InsertUnblockRequest = z.infer<typeof insertUnblockRequestSchema>;
 
 export type Category = typeof categories.$inferSelect;
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
