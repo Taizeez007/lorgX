@@ -426,3 +426,6 @@ export type InsertSavedPlace = z.infer<typeof insertSavedPlaceSchema>;
 
 export type PostShare = typeof postShares.$inferSelect;
 export type InsertPostShare = z.infer<typeof insertPostShareSchema>;
+
+//Account management feature schemas are already defined above
+//Do not add duplicate declarations

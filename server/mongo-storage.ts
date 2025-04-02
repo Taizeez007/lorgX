@@ -394,7 +394,155 @@ export class MongoStorage implements IStorage {
   }
 
   // Additional methods implementation will continue here
-  // This is a foundational implementation that covers the key functionality
-
-  // You can add the remaining methods as needed
+  
+  // Account Management - User Blocking Methods
+  async blockUser(blockerId: number, blockedId: number, reason?: string): Promise<BlockedUser> {
+    const lastBlockedUser = await BlockedUserModel.findOne().sort({ id: -1 });
+    const id = lastBlockedUser ? lastBlockedUser.id + 1 : 1;
+    
+    const newBlockedUser = new BlockedUserModel({
+      id,
+      blockerId,
+      blockedId,
+      reason,
+      createdAt: new Date()
+    });
+    
+    await newBlockedUser.save();
+    return this.documentToEntity<BlockedUser>(newBlockedUser);
+  }
+  
+  async unblockUser(blockerId: number, blockedId: number): Promise<void> {
+    await BlockedUserModel.deleteOne({ blockerId, blockedId });
+  }
+  
+  async getBlockedUsers(userId: number): Promise<BlockedUser[]> {
+    const blockedUsers = await BlockedUserModel.find({ blockerId: userId });
+    return this.documentsToEntities<BlockedUser>(blockedUsers);
+  }
+  
+  async isUserBlocked(blockerId: number, blockedId: number): Promise<boolean> {
+    const count = await BlockedUserModel.countDocuments({ 
+      blockerId, 
+      blockedId 
+    });
+    return count > 0;
+  }
+  
+  // Account Management - Unblock Requests
+  async createUnblockRequest(request: InsertUnblockRequest): Promise<UnblockRequest> {
+    const lastRequest = await UnblockRequestModel.findOne().sort({ id: -1 });
+    const id = lastRequest ? lastRequest.id + 1 : 1;
+    
+    const newRequest = new UnblockRequestModel({
+      ...request,
+      id,
+      createdAt: new Date()
+    });
+    
+    await newRequest.save();
+    return this.documentToEntity<UnblockRequest>(newRequest);
+  }
+  
+  async getPendingUnblockRequests(): Promise<UnblockRequest[]> {
+    const requests = await UnblockRequestModel.find({ status: 'pending' });
+    return this.documentsToEntities<UnblockRequest>(requests);
+  }
+  
+  async resolveUnblockRequest(requestId: number, status: string, adminId: number): Promise<UnblockRequest | undefined> {
+    const request = await UnblockRequestModel.findOneAndUpdate(
+      { id: requestId },
+      { 
+        $set: { 
+          status, 
+          adminId, 
+          resolvedAt: new Date() 
+        } 
+      },
+      { new: true }
+    );
+    
+    return this.documentToEntity<UnblockRequest>(request);
+  }
+  
+  // Account Management - Admin Users
+  async createAdminUser(adminUser: InsertAdminUser): Promise<AdminUser> {
+    const lastAdminUser = await AdminUserModel.findOne().sort({ id: -1 });
+    const id = lastAdminUser ? lastAdminUser.id + 1 : 1;
+    
+    const newAdminUser = new AdminUserModel({
+      ...adminUser,
+      id,
+      assignedAt: new Date()
+    });
+    
+    await newAdminUser.save();
+    return this.documentToEntity<AdminUser>(newAdminUser);
+  }
+  
+  async removeAdminUser(userId: number): Promise<void> {
+    await AdminUserModel.deleteOne({ userId });
+  }
+  
+  async getAdminUsers(): Promise<AdminUser[]> {
+    const admins = await AdminUserModel.find();
+    return this.documentsToEntities<AdminUser>(admins);
+  }
+  
+  async isUserAdmin(userId: number): Promise<boolean> {
+    const count = await AdminUserModel.countDocuments({ 
+      userId, 
+      role: { $in: ['admin', 'super_admin'] } 
+    });
+    return count > 0;
+  }
+  
+  async isSuperAdmin(userId: number): Promise<boolean> {
+    const count = await AdminUserModel.countDocuments({ 
+      userId, 
+      role: 'super_admin' 
+    });
+    return count > 0;
+  }
+  
+  // Account Deletion Methods
+  async requestDeleteUser(userId: number): Promise<User | undefined> {
+    const user = await UserModel.findOneAndUpdate(
+      { id: userId },
+      { 
+        $set: { 
+          deleteRequestedAt: new Date() 
+        } 
+      },
+      { new: true }
+    );
+    
+    return this.documentToEntity<User>(user);
+  }
+  
+  async cancelDeleteUser(userId: number): Promise<User | undefined> {
+    const user = await UserModel.findOneAndUpdate(
+      { id: userId },
+      { 
+        $set: { 
+          deleteRequestedAt: null 
+        } 
+      },
+      { new: true }
+    );
+    
+    return this.documentToEntity<User>(user);
+  }
+  
+  async deleteUser(userId: number): Promise<void> {
+    await UserModel.updateOne(
+      { id: userId },
+      { 
+        $set: { 
+          isDeleted: true,
+          deleteRequestedAt: new Date()
+        } 
+      }
+    );
+  }
 }

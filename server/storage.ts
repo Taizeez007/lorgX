@@ -18,7 +18,10 @@ import {
   eventLikes, type EventLike, type InsertEventLike,
   savedEvents, type SavedEvent, type InsertSavedEvent,
   savedPlaces, type SavedPlace, type InsertSavedPlace,
-  postShares, type PostShare, type InsertPostShare
+  postShares, type PostShare, type InsertPostShare,
+  blockedUsers, type BlockedUser, type InsertBlockedUser,
+  adminUsers, type AdminUser, type InsertAdminUser,
+  unblockRequests, type UnblockRequest, type InsertUnblockRequest
 } from "@shared/schema";
 
 import { Store } from "express-session";
@@ -37,6 +40,25 @@ export interface IStorage {
   cancelDeleteUser(id: number): Promise<User | undefined>;
   deleteUser(id: number): Promise<void>;
   updateUserPreferences(userId: number, preferences: any): Promise<User | undefined>;
+  
+  // User blocking methods
+  blockUser(blockerId: number, blockedId: number, reason?: string): Promise<BlockedUser>;
+  unblockUser(blockerId: number, blockedId: number): Promise<void>;
+  getBlockedUsers(blockerId: number): Promise<BlockedUser[]>;
+  isUserBlocked(blockerId: number, blockedId: number): Promise<boolean>;
+  
+  // Admin methods
+  createAdminUser(adminUser: InsertAdminUser): Promise<AdminUser>;
+  removeAdminUser(userId: number): Promise<void>;
+  getAdminUsers(): Promise<AdminUser[]>;
+  isUserAdmin(userId: number): Promise<boolean>;
+  isSuperAdmin(userId: number): Promise<boolean>;
+  
+  // Unblock request methods
+  createUnblockRequest(request: InsertUnblockRequest): Promise<UnblockRequest>;
+  getUnblockRequests(): Promise<UnblockRequest[]>;
+  getPendingUnblockRequests(): Promise<UnblockRequest[]>;
+  resolveUnblockRequest(id: number, status: 'approved' | 'rejected', resolvedBy: number): Promise<UnblockRequest | undefined>;
   
   // Category methods
   getCategories(): Promise<Category[]>;
@@ -171,6 +193,9 @@ export class MemStorage implements IStorage {
   private savedEvents: Map<number, SavedEvent>;
   private savedPlaces: Map<number, SavedPlace>;
   private postShares: Map<number, PostShare>;
+  private blockedUsers: Map<number, BlockedUser>;
+  private adminUsers: Map<number, AdminUser>;
+  private unblockRequests: Map<number, UnblockRequest>;
   
   currentUserId: number;
   currentCategoryId: number;
@@ -192,6 +217,9 @@ export class MemStorage implements IStorage {
   currentSavedEventId: number;
   currentSavedPlaceId: number;
   currentPostShareId: number;
+  currentBlockedUserId: number;
+  currentAdminUserId: number;
+  currentUnblockRequestId: number;
   sessionStore: Store;
 
   constructor() {
@@ -215,6 +243,9 @@ export class MemStorage implements IStorage {
     this.savedEvents = new Map();
     this.savedPlaces = new Map();
     this.postShares = new Map();
+    this.blockedUsers = new Map();
+    this.adminUsers = new Map();
+    this.unblockRequests = new Map();
     
     this.currentUserId = 1;
     this.currentCategoryId = 1;
@@ -236,6 +267,9 @@ export class MemStorage implements IStorage {
     this.currentSavedEventId = 1;
     this.currentSavedPlaceId = 1;
     this.currentPostShareId = 1;
+    this.currentBlockedUserId = 1;
+    this.currentAdminUserId = 1;
+    this.currentUnblockRequestId = 1;
     
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000, // Clear expired sessions every 24h
@@ -1210,6 +1244,123 @@ export class MemStorage implements IStorage {
       const place = this.eventPlaces.get(entry.placeId);
       return place!;
     }).filter(Boolean);
+  }
+  
+  // User blocking methods
+  async blockUser(blockerId: number, blockedId: number, reason?: string): Promise<BlockedUser> {
+    const id = this.currentBlockedUserId++;
+    const createdAt = new Date();
+    const newBlock: BlockedUser = { 
+      id, 
+      blockerId, 
+      blockedId, 
+      reason: reason || null, 
+      createdAt 
+    };
+    
+    this.blockedUsers.set(id, newBlock);
+    return newBlock;
+  }
+  
+  async unblockUser(blockerId: number, blockedId: number): Promise<void> {
+    const blockEntry = Array.from(this.blockedUsers.values())
+      .find(block => block.blockerId === blockerId && block.blockedId === blockedId);
+    
+    if (blockEntry) {
+      this.blockedUsers.delete(blockEntry.id);
+    }
+  }
+  
+  async getBlockedUsers(blockerId: number): Promise<BlockedUser[]> {
+    return Array.from(this.blockedUsers.values())
+      .filter(block => block.blockerId === blockerId);
+  }
+  
+  async isUserBlocked(blockerId: number, blockedId: number): Promise<boolean> {
+    return Array.from(this.blockedUsers.values())
+      .some(block => block.blockerId === blockerId && block.blockedId === blockedId);
+  }
+  
+  // Admin methods
+  async createAdminUser(adminUser: InsertAdminUser): Promise<AdminUser> {
+    const id = this.currentAdminUserId++;
+    const assignedAt = new Date();
+    const newAdminUser: AdminUser = { ...adminUser, id, assignedAt };
+    this.adminUsers.set(id, newAdminUser);
+    return newAdminUser;
+  }
+  
+  async removeAdminUser(userId: number): Promise<void> {
+    const adminEntry = Array.from(this.adminUsers.values())
+      .find(admin => admin.userId === userId);
+    
+    if (adminEntry) {
+      this.adminUsers.delete(adminEntry.id);
+    }
+  }
+  
+  async getAdminUsers(): Promise<AdminUser[]> {
+    return Array.from(this.adminUsers.values());
+  }
+  
+  async isUserAdmin(userId: number): Promise<boolean> {
+    return Array.from(this.adminUsers.values())
+      .some(admin => admin.userId === userId);
+  }
+  
+  async isSuperAdmin(userId: number): Promise<boolean> {
+    return Array.from(this.adminUsers.values())
+      .some(admin => admin.userId === userId && admin.role === 'super_admin');
+  }
+  
+  // Unblock request methods
+  async createUnblockRequest(request: InsertUnblockRequest): Promise<UnblockRequest> {
+    const id = this.currentUnblockRequestId++;
+    const createdAt = new Date();
+    const newRequest: UnblockRequest = { 
+      ...request, 
+      id, 
+      status: 'pending',
+      createdAt,
+      resolvedAt: null,
+      resolvedBy: null
+    };
+    this.unblockRequests.set(id, newRequest);
+    return newRequest;
+  }
+  
+  async getUnblockRequests(): Promise<UnblockRequest[]> {
+    return Array.from(this.unblockRequests.values())
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+  
+  async getPendingUnblockRequests(): Promise<UnblockRequest[]> {
+    return Array.from(this.unblockRequests.values())
+      .filter(request => request.status === 'pending')
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+  
+  async resolveUnblockRequest(id: number, status: 'approved' | 'rejected', resolvedBy: number): Promise<UnblockRequest | undefined> {
+    const request = this.unblockRequests.get(id);
+    if (!request) return undefined;
+    
+    const resolvedAt = new Date();
+    const updatedRequest = { ...request, status, resolvedAt, resolvedBy };
+    this.unblockRequests.set(id, updatedRequest);
+    
+    // If approved, automatically unblock the user
+    if (status === 'approved') {
+      // Get all blocks where this user has been blocked
+      const blocks = Array.from(this.blockedUsers.values())
+        .filter(block => block.blockedId === request.userId);
+      
+      // Remove all blocks
+      for (const block of blocks) {
+        this.unblockUser(block.blockerId, block.blockedId);
+      }
+    }
+    
+    return updatedRequest;
   }
 }
 

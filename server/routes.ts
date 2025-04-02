@@ -23,6 +23,9 @@ import {
   InsertSavedEvent,
   InsertSavedPlace,
   InsertPostShare,
+  InsertBlockedUser,
+  InsertAdminUser,
+  InsertUnblockRequest,
   insertPostSchema,
   insertEventSchema,
   insertPostLikeSchema,
@@ -39,7 +42,10 @@ import {
   insertBookingSchema,
   insertCommentSchema,
   insertBusinessProfileSchema,
-  insertBusinessEditorSchema
+  insertBusinessEditorSchema,
+  insertBlockedUserSchema,
+  insertAdminUserSchema,
+  insertUnblockRequestSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { ZodError } from "zod";
@@ -1834,6 +1840,284 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating booking:", error);
       res.status(500).json({ message: "Error creating booking" });
+    }
+  });
+
+  // Account Management API
+  // User Blocking
+  app.post("/api/users/block", ensureAuthenticated, async (req, res) => {
+    try {
+      const { blockedId, reason } = req.body;
+      const blockerId = req.user?.id;
+      
+      if (!blockerId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (!blockedId) {
+        return res.status(400).json({ message: "Blocked user ID is required" });
+      }
+      
+      // Check if already blocked
+      const isAlreadyBlocked = await storage.isUserBlocked(blockerId, blockedId);
+      if (isAlreadyBlocked) {
+        return res.status(400).json({ message: "User is already blocked" });
+      }
+      
+      const blockedUser = await storage.blockUser(blockerId, blockedId, reason);
+      res.status(201).json(blockedUser);
+    } catch (error) {
+      console.error("Error blocking user:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/users/unblock", ensureAuthenticated, async (req, res) => {
+    try {
+      const { blockedId } = req.body;
+      const blockerId = req.user?.id;
+      
+      if (!blockerId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (!blockedId) {
+        return res.status(400).json({ message: "Blocked user ID is required" });
+      }
+      
+      await storage.unblockUser(blockerId, blockedId);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Error unblocking user:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.get("/api/users/blocked", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const blockedUsers = await storage.getBlockedUsers(userId);
+      res.json(blockedUsers);
+    } catch (error) {
+      console.error("Error fetching blocked users:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Unblock Requests
+  app.post("/api/unblock-requests", ensureAuthenticated, async (req, res) => {
+    try {
+      const { reason } = req.body;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (!reason) {
+        return res.status(400).json({ message: "Reason is required" });
+      }
+      
+      const request = await storage.createUnblockRequest({ userId, reason });
+      res.status(201).json(request);
+    } catch (error) {
+      console.error("Error creating unblock request:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Admin routes - restricted to admin users
+  const ensureAdmin = async (req: Request, res: Response, next: Function) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+    
+    const isAdmin = await storage.isUserAdmin(userId);
+    if (!isAdmin) {
+      return res.status(403).json({ message: "Forbidden: Admin access required" });
+    }
+    
+    next();
+  };
+  
+  // Super admin routes - restricted to super admin users
+  const ensureSuperAdmin = async (req: Request, res: Response, next: Function) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "User not authenticated" });
+    }
+    
+    const isSuperAdmin = await storage.isSuperAdmin(userId);
+    if (!isSuperAdmin) {
+      return res.status(403).json({ message: "Forbidden: Super admin access required" });
+    }
+    
+    next();
+  };
+  
+  app.get("/api/admin/unblock-requests", ensureAdmin, async (req, res) => {
+    try {
+      const requests = await storage.getPendingUnblockRequests();
+      res.json(requests);
+    } catch (error) {
+      console.error("Error fetching unblock requests:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/admin/unblock-requests/:id/resolve", ensureAdmin, async (req, res) => {
+    try {
+      const { status } = req.body;
+      const requestId = parseInt(req.params.id);
+      const adminId = req.user?.id;
+      
+      if (!adminId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(requestId)) {
+        return res.status(400).json({ message: "Invalid request ID" });
+      }
+      
+      if (status !== 'approved' && status !== 'rejected') {
+        return res.status(400).json({ message: "Status must be 'approved' or 'rejected'" });
+      }
+      
+      const updatedRequest = await storage.resolveUnblockRequest(requestId, status, adminId);
+      
+      if (!updatedRequest) {
+        return res.status(404).json({ message: "Unblock request not found" });
+      }
+      
+      res.json(updatedRequest);
+    } catch (error) {
+      console.error("Error resolving unblock request:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/admin/admins", ensureSuperAdmin, async (req, res) => {
+    try {
+      const { userId, role } = req.body;
+      const assignedBy = req.user?.id;
+      
+      if (!assignedBy) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (!userId) {
+        return res.status(400).json({ message: "User ID is required" });
+      }
+      
+      if (!role || (role !== 'admin' && role !== 'super_admin')) {
+        return res.status(400).json({ message: "Role must be 'admin' or 'super_admin'" });
+      }
+      
+      const adminUser = await storage.createAdminUser({ userId, role, assignedBy });
+      res.status(201).json(adminUser);
+    } catch (error) {
+      console.error("Error creating admin user:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.delete("/api/admin/admins/:userId", ensureSuperAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      await storage.removeAdminUser(userId);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Error removing admin user:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.get("/api/admin/admins", ensureSuperAdmin, async (req, res) => {
+    try {
+      const admins = await storage.getAdminUsers();
+      res.json(admins);
+    } catch (error) {
+      console.error("Error fetching admin users:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Account deletion request/cancel
+  app.post("/api/users/request-delete", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const user = await storage.requestDeleteUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.json(user);
+    } catch (error) {
+      console.error("Error requesting account deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/users/cancel-delete", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const user = await storage.cancelDeleteUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.json(user);
+    } catch (error) {
+      console.error("Error cancelling account deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Admin delete user account immediately
+  app.delete("/api/admin/users/:userId", ensureSuperAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      
+      if (isNaN(userId)) {
+        return res.status(400).json({ message: "Invalid user ID" });
+      }
+      
+      await storage.deleteUser(userId);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
   
