@@ -246,6 +246,92 @@ export class MongoStorage implements IStorage {
     const events = await EventModel.find({ createdById: userId, isDeleted: { $ne: true } });
     return this.documentsToEntities<Event>(events);
   }
+  
+  async searchEvents(params: {
+    query?: string;
+    categoryId?: number;
+    startDate?: Date;
+    endDate?: Date;
+    isFree?: boolean;
+    isVirtual?: boolean;
+    isHybrid?: boolean;
+    maxPrice?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<Event[]> {
+    try {
+      // Build the query object based on params
+      const query: any = { 
+        isPublic: true,
+        isDeleted: { $ne: true }
+      };
+      
+      // Text search on title and description
+      if (params.query) {
+        // Use MongoDB text search if a text index exists,
+        // otherwise do a regex search on title and description
+        query.$or = [
+          { title: { $regex: params.query, $options: 'i' } },
+          { description: { $regex: params.query, $options: 'i' } }
+        ];
+      }
+      
+      // Filter by category
+      if (params.categoryId) {
+        query.categoryId = params.categoryId;
+      }
+      
+      // Filter by date range
+      if (params.startDate || params.endDate) {
+        query.startDate = {};
+        if (params.startDate) {
+          query.startDate.$gte = params.startDate;
+        }
+        if (params.endDate) {
+          query.startDate.$lte = params.endDate;
+        }
+      }
+      
+      // Filter by event type
+      if (params.isVirtual) {
+        query.isVirtual = true;
+      }
+      
+      if (params.isHybrid) {
+        query.isHybrid = true;
+      }
+      
+      // Filter by price
+      if (params.isFree) {
+        query.isFree = true;
+      } else if (params.maxPrice !== undefined) {
+        query.$or = query.$or || [];
+        query.$or.push(
+          { isFree: true },
+          { price: { $lte: params.maxPrice } }
+        );
+      }
+      
+      // Create the base query
+      let findQuery = EventModel.find(query);
+      
+      // Apply pagination
+      if (params.offset) {
+        findQuery = findQuery.skip(params.offset);
+      }
+      
+      if (params.limit) {
+        findQuery = findQuery.limit(params.limit);
+      }
+      
+      // Execute the query
+      const events = await findQuery.lean();
+      return this.documentsToEntities<Event>(events);
+    } catch (error) {
+      console.error('Error searching events:', error);
+      return [];
+    }
+  }
 
   async createEvent(event: InsertEvent): Promise<Event> {
     const lastEvent = await EventModel.findOne().sort({ id: -1 });

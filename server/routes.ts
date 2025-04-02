@@ -186,6 +186,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Internal server error" });
     }
   });
+  
+  // Advanced search endpoint
+  app.get("/api/search/events", async (req, res) => {
+    try {
+      // Extract search parameters from query params
+      const query = req.query.query as string | undefined;
+      const categoryId = req.query.categoryId ? parseInt(req.query.categoryId as string) : undefined;
+      const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+      const isFree = req.query.isFree === 'true';
+      const isVirtual = req.query.isVirtual === 'true';
+      const isHybrid = req.query.isHybrid === 'true';
+      const maxPrice = req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 20;
+      const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+      
+      // Search for events with the provided filters
+      const events = await storage.searchEvents({
+        query,
+        categoryId,
+        startDate,
+        endDate,
+        isFree: req.query.isFree !== undefined ? isFree : undefined,
+        isVirtual: req.query.isVirtual !== undefined ? isVirtual : undefined,
+        isHybrid: req.query.isHybrid !== undefined ? isHybrid : undefined,
+        maxPrice,
+        limit,
+        offset
+      });
+      
+      res.json(events);
+    } catch (error) {
+      console.error("Error searching events:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
 
   app.get("/api/events/user", ensureAuthenticated, async (req, res) => {
     try {

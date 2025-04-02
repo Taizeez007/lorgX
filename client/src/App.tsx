@@ -17,6 +17,7 @@ const EventsPage = lazy(() => import("@/pages/events-page"));
 const CreateEventPage = lazy(() => import("@/pages/create-event-page"));
 const CommunityPage = lazy(() => import("@/pages/community-page"));
 const ChatPage = lazy(() => import("@/pages/chat-page"));
+const SearchPage = lazy(() => import("@/pages/search-page"));
 
 // Network status indicator component
 function NetworkStatus() {
@@ -77,6 +78,7 @@ function Router() {
       <ProtectedRoute path="/create-event" component={CreateEventPage} />
       <ProtectedRoute path="/community" component={CommunityPage} />
       <ProtectedRoute path="/chat" component={ChatPage} />
+      <ProtectedRoute path="/search" component={SearchPage} />
       <Route>
         <NotFound />
       </Route>

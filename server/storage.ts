@@ -90,6 +90,18 @@ export interface IStorage {
   getSavedEvents(userId: number): Promise<Event[]>;
   getLikedEvents(userId: number): Promise<Event[]>;
   getRecommendedEvents(userId: number, limit?: number): Promise<Event[]>;
+  searchEvents(params: {
+    query?: string;
+    categoryId?: number;
+    startDate?: Date;
+    endDate?: Date;
+    isFree?: boolean;
+    isVirtual?: boolean;
+    isHybrid?: boolean;
+    maxPrice?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<Event[]>;
   requestDeleteEvent(id: number): Promise<Event | undefined>;
   cancelDeleteEvent(id: number): Promise<Event | undefined>;
   deleteEvent(id: number): Promise<void>;
@@ -413,6 +425,83 @@ export class MemStorage implements IStorage {
     return Array.from(this.events.values())
       .filter(event => new Date(event.startDate) > now)
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  }
+  
+  async searchEvents(params: {
+    query?: string;
+    categoryId?: number;
+    startDate?: Date;
+    endDate?: Date;
+    isFree?: boolean;
+    isVirtual?: boolean;
+    isHybrid?: boolean;
+    maxPrice?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<Event[]> {
+    let filteredEvents = Array.from(this.events.values())
+      .filter(event => event.isPublic && !event.isDeleted);
+    
+    // Filter by search query (on title and description)
+    if (params.query) {
+      const query = params.query.toLowerCase();
+      filteredEvents = filteredEvents.filter(event => 
+        (event.title?.toLowerCase().includes(query) || 
+         event.description?.toLowerCase().includes(query))
+      );
+    }
+    
+    // Filter by category
+    if (params.categoryId) {
+      filteredEvents = filteredEvents.filter(event => 
+        event.categoryId === params.categoryId
+      );
+    }
+    
+    // Filter by date range
+    if (params.startDate) {
+      filteredEvents = filteredEvents.filter(event => 
+        new Date(event.startDate) >= params.startDate!
+      );
+    }
+    
+    if (params.endDate) {
+      filteredEvents = filteredEvents.filter(event => 
+        new Date(event.startDate) <= params.endDate!
+      );
+    }
+    
+    // Filter by event type
+    if (params.isVirtual) {
+      filteredEvents = filteredEvents.filter(event => event.isVirtual);
+    }
+    
+    if (params.isHybrid) {
+      filteredEvents = filteredEvents.filter(event => event.isHybrid);
+    }
+    
+    // Filter by price
+    if (params.isFree) {
+      filteredEvents = filteredEvents.filter(event => event.isFree);
+    } else if (params.maxPrice !== undefined) {
+      filteredEvents = filteredEvents.filter(event => 
+        event.isFree || (event.price !== undefined && event.price <= params.maxPrice!)
+      );
+    }
+    
+    // Sort by start date (most recent first)
+    filteredEvents.sort((a, b) => 
+      new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+    );
+    
+    // Apply pagination
+    if (params.offset || params.limit) {
+      const offset = params.offset || 0;
+      const limit = params.limit || filteredEvents.length;
+      filteredEvents = filteredEvents.slice(offset, offset + limit);
+    }
+    
+    return filteredEvents;
   }
   
   // Post methods
@@ -982,6 +1071,90 @@ export class MemStorage implements IStorage {
       const event = this.events.get(entry.eventId);
       return event!;
     }).filter(Boolean);
+  }
+  
+  async searchEvents(params: {
+    query?: string;
+    categoryId?: number;
+    startDate?: Date;
+    endDate?: Date;
+    isFree?: boolean;
+    isVirtual?: boolean;
+    isHybrid?: boolean;
+    maxPrice?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<Event[]> {
+    // Start with all public events that haven't been deleted
+    let filteredEvents = Array.from(this.events.values())
+      .filter(event => event.isPublic && !event.isDeleted);
+    
+    // Text search on title and description
+    if (params.query) {
+      const query = params.query.toLowerCase();
+      filteredEvents = filteredEvents.filter(event => 
+        event.title.toLowerCase().includes(query) || 
+        (event.description && event.description.toLowerCase().includes(query))
+      );
+    }
+    
+    // Filter by category
+    if (params.categoryId) {
+      filteredEvents = filteredEvents.filter(event => 
+        event.categoryId === params.categoryId
+      );
+    }
+    
+    // Filter by date range
+    if (params.startDate) {
+      filteredEvents = filteredEvents.filter(event => 
+        new Date(event.startDate) >= params.startDate!
+      );
+    }
+    
+    if (params.endDate) {
+      filteredEvents = filteredEvents.filter(event => 
+        new Date(event.startDate) <= params.endDate!
+      );
+    }
+    
+    // Filter by price
+    if (params.isFree) {
+      filteredEvents = filteredEvents.filter(event => 
+        event.isFree === true
+      );
+    }
+    
+    if (params.maxPrice !== undefined) {
+      filteredEvents = filteredEvents.filter(event => 
+        event.isFree === true || 
+        (event.price !== null && event.price !== undefined && event.price <= params.maxPrice!)
+      );
+    }
+    
+    // Filter by event type
+    if (params.isVirtual) {
+      filteredEvents = filteredEvents.filter(event => 
+        event.isVirtual === true
+      );
+    }
+    
+    if (params.isHybrid) {
+      filteredEvents = filteredEvents.filter(event => 
+        event.isHybrid === true
+      );
+    }
+    
+    // Apply pagination
+    if (params.offset) {
+      filteredEvents = filteredEvents.slice(params.offset);
+    }
+    
+    if (params.limit) {
+      filteredEvents = filteredEvents.slice(0, params.limit);
+    }
+    
+    return filteredEvents;
   }
   
   async getRecommendedEvents(userId: number, limit: number = 10): Promise<Event[]> {
