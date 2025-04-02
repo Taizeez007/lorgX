@@ -21,6 +21,7 @@ import {
   postShares, type PostShare, type InsertPostShare
 } from "@shared/schema";
 
+import { Store } from "express-session";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 
@@ -146,7 +147,7 @@ export interface IStorage {
   getSavedPlaces(userId: number): Promise<EventPlace[]>;
   
   // Session store
-  sessionStore: session.SessionStore;
+  sessionStore: Store;
 }
 
 export class MemStorage implements IStorage {
@@ -191,7 +192,7 @@ export class MemStorage implements IStorage {
   currentSavedEventId: number;
   currentSavedPlaceId: number;
   currentPostShareId: number;
-  sessionStore: session.SessionStore;
+  sessionStore: Store;
 
   constructor() {
     this.users = new Map();
@@ -1212,4 +1213,10 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+import { MongoStorage } from './mongo-storage';
+
+// Use MongoDB storage in production, or if MONGODB_URI is set
+// Otherwise, fall back to MemStorage for development/testing
+export const storage = process.env.MONGODB_URI || process.env.NODE_ENV === 'production' 
+  ? new MongoStorage() 
+  : new MemStorage();
