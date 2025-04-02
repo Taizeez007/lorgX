@@ -617,18 +617,25 @@ export class MemStorage implements IStorage {
   async createBooking(booking: InsertBooking): Promise<Booking> {
     const id = this.currentBookingId++;
     const createdAt = new Date();
+    
+    // Set default values for guest booking fields if not provided
+    const isGuestBooking = booking.isGuestBooking || false;
+    const numberOfTickets = booking.numberOfTickets || 1;
+    
     const newBooking: Booking = { 
-      ...booking, 
+      ...booking,
+      isGuestBooking,
+      numberOfTickets, 
       id, 
       status: 'confirmed', 
       createdAt 
     };
     this.bookings.set(id, newBooking);
     
-    // Update event attendee count
+    // Update event attendee count (counting the number of tickets)
     const event = this.events.get(booking.eventId);
     if (event) {
-      event.attendeeCount += 1;
+      event.attendeeCount += numberOfTickets;
       this.events.set(event.id, event);
     }
     

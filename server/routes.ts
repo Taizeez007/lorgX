@@ -1517,18 +1517,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (event.type === 'payment_intent.succeeded') {
         const paymentIntent = event.data.object;
         const eventId = parseInt(paymentIntent.metadata.eventId);
-        const userId = parseInt(paymentIntent.metadata.userId);
+        const isGuestBooking = paymentIntent.metadata.isGuestBooking === 'true';
         
-        // Create booking after successful payment
-        await storage.createBooking({
+        // Create the booking data object
+        const bookingData: any = {
           eventId,
-          userId,
           paymentStatus: 'paid',
           paymentMethod: 'stripe',
           paymentAmount: paymentIntent.amount / 100,
           paymentCurrency: paymentIntent.currency,
           paymentReference: paymentIntent.id
-        });
+        };
+        
+        // Add either user ID or guest information
+        if (isGuestBooking) {
+          bookingData.isGuestBooking = true;
+          bookingData.guestName = paymentIntent.metadata.guestName;
+          bookingData.guestEmail = paymentIntent.metadata.guestEmail;
+          bookingData.guestPhone = paymentIntent.metadata.guestPhone;
+          bookingData.numberOfTickets = parseInt(paymentIntent.metadata.numberOfTickets || '1');
+        } else {
+          bookingData.userId = parseInt(paymentIntent.metadata.userId);
+        }
+        
+        // Create booking after successful payment
+        await storage.createBooking(bookingData);
       }
       
       res.status(200).json({ received: true });
@@ -1538,28 +1551,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Paystack payment integration
-  app.post("/api/payments/paystack/initialize", ensureAuthenticated, async (req, res) => {
+  // Paystack payment integration for both logged-in users and guests
+  app.post("/api/payments/paystack/initialize", async (req, res) => {
     try {
-      const { amount, eventId, email, currency = "NGN" } = req.body;
-      const userId = req.user?.id;
+      const { 
+        amount, 
+        eventId, 
+        email, 
+        currency = "NGN",
+        isGuestBooking,
+        guestName,
+        guestEmail,
+        guestPhone,
+        numberOfTickets = 1
+      } = req.body;
       
-      if (!userId) {
+      // Get user ID if authenticated
+      const userId = req.isAuthenticated() ? req.user?.id : null;
+      
+      // Validate required fields
+      if (!amount || !eventId || !email) {
+        return res.status(400).json({ message: "Amount, eventId, and email are required" });
+      }
+      
+      // For guest bookings, validate guest information
+      if (isGuestBooking && (!guestName || !guestEmail)) {
+        return res.status(400).json({ message: "Guest name and email are required for guest bookings" });
+      }
+      
+      // If not a guest booking and not authenticated, return error
+      if (!isGuestBooking && !userId) {
         return res.status(401).json({ message: "User not authenticated" });
       }
       
-      if (!amount || !eventId || !email) {
-        return res.status(400).json({ message: "Amount, eventId, and email are required" });
+      // Prepare metadata based on booking type
+      const metadata: any = {
+        eventId: eventId.toString(),
+        isGuestBooking: isGuestBooking ? 'true' : 'false',
+        numberOfTickets: numberOfTickets.toString()
+      };
+      
+      // Add appropriate user data
+      if (isGuestBooking) {
+        metadata.guestName = guestName;
+        metadata.guestEmail = guestEmail;
+        metadata.guestPhone = guestPhone || '';
+      } else {
+        metadata.userId = userId!.toString();
       }
       
       // Initialize transaction
       const response = await paystack.transaction.initialize({
         amount: Math.round(parseFloat(amount) * 100), // Convert to kobo (smallest unit)
-        email,
-        metadata: {
-          eventId: eventId.toString(),
-          userId: userId.toString()
-        },
+        email: isGuestBooking ? guestEmail : email,
+        metadata,
         currency
       });
       
@@ -1570,15 +1615,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
-  // Paystack payment verification
-  app.get("/api/payments/paystack/verify/:reference", ensureAuthenticated, async (req, res) => {
+  // Paystack payment verification for both logged-in users and guests
+  app.get("/api/payments/paystack/verify/:reference", async (req, res) => {
     try {
       const { reference } = req.params;
-      const userId = req.user?.id;
-      
-      if (!userId) {
-        return res.status(401).json({ message: "User not authenticated" });
-      }
       
       // Verify transaction
       const response = await paystack.transaction.verify(reference);
@@ -1586,17 +1626,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (response.data.status === 'success') {
         const { metadata } = response.data;
         const eventId = parseInt(metadata.eventId);
+        const isGuestBooking = metadata.isGuestBooking === 'true';
         
-        // Create booking after successful payment
-        await storage.createBooking({
+        // Create the booking data object
+        const bookingData: any = {
           eventId,
-          userId,
           paymentStatus: 'paid',
           paymentMethod: 'paystack',
           paymentAmount: response.data.amount / 100,
           paymentCurrency: response.data.currency,
           paymentReference: reference
-        });
+        };
+        
+        // Add either user ID or guest information
+        if (isGuestBooking) {
+          bookingData.isGuestBooking = true;
+          bookingData.guestName = metadata.guestName;
+          bookingData.guestEmail = metadata.guestEmail;
+          bookingData.guestPhone = metadata.guestPhone || '';
+          bookingData.numberOfTickets = parseInt(metadata.numberOfTickets || '1');
+        } else {
+          // If not a guest booking, ensure user is authenticated
+          if (!req.isAuthenticated()) {
+            return res.status(401).json({ message: "User not authenticated" });
+          }
+          bookingData.userId = req.user?.id;
+        }
+        
+        // Create booking after successful payment
+        await storage.createBooking(bookingData);
         
         res.status(200).json({ status: 'success', data: response.data });
       } else {
@@ -1605,6 +1663,113 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error verifying Paystack payment:", error);
       res.status(500).json({ message: "Error verifying payment" });
+    }
+  });
+  
+  // Get all bookings for an event (for event organizers)
+  app.get("/api/events/:eventId/bookings", ensureAuthenticated, async (req, res) => {
+    try {
+      const { eventId } = req.params;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      // Check if the event exists
+      const event = await storage.getEventById(parseInt(eventId));
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // Check if the user is the creator of the event or a business editor
+      const isCreator = event.createdById === userId;
+      
+      // If the event has a businessId, check if the user is an editor
+      let isEditor = false;
+      if ('businessId' in event && event.businessId) {
+        const editors = await storage.getBusinessEditors(event.businessId);
+        isEditor = editors.some(editor => editor.editorId === userId);
+      }
+      
+      if (!isCreator && !isEditor) {
+        return res.status(403).json({ message: "You don't have permission to view bookings for this event" });
+      }
+      
+      // Get all bookings for the event
+      const bookings = await storage.getBookingsByEvent(parseInt(eventId));
+      
+      res.status(200).json(bookings);
+    } catch (error) {
+      console.error("Error fetching event bookings:", error);
+      res.status(500).json({ message: "Error fetching event bookings" });
+    }
+  });
+  
+  // Create direct booking without payment (for free events)
+  app.post("/api/bookings", async (req, res) => {
+    try {
+      const {
+        eventId,
+        isGuestBooking,
+        guestName,
+        guestEmail,
+        guestPhone,
+        numberOfTickets = 1,
+        additionalNotes
+      } = req.body;
+      
+      if (!eventId) {
+        return res.status(400).json({ message: "Event ID is required" });
+      }
+      
+      // Check if the event exists
+      const event = await storage.getEventById(parseInt(eventId));
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      // Check if event is free
+      if (event.price && parseFloat(String(event.price)) > 0) {
+        return res.status(400).json({ 
+          message: "This endpoint is for free events only. For paid events, use the payment endpoints." 
+        });
+      }
+      
+      // Create the booking data object
+      const bookingData: any = {
+        eventId: parseInt(eventId),
+        status: 'confirmed',
+        numberOfTickets: parseInt(numberOfTickets),
+        additionalNotes
+      };
+      
+      // Add either user ID or guest information
+      if (isGuestBooking) {
+        // Validate guest booking fields
+        if (!guestName || !guestEmail) {
+          return res.status(400).json({ message: "Guest name and email are required for guest bookings" });
+        }
+        
+        bookingData.isGuestBooking = true;
+        bookingData.guestName = guestName;
+        bookingData.guestEmail = guestEmail;
+        bookingData.guestPhone = guestPhone || '';
+      } else {
+        // If not a guest booking, ensure user is authenticated
+        if (!req.isAuthenticated()) {
+          return res.status(401).json({ message: "User not authenticated" });
+        }
+        bookingData.userId = req.user?.id;
+      }
+      
+      // Create the booking
+      const booking = await storage.createBooking(bookingData);
+      
+      res.status(201).json(booking);
+    } catch (error) {
+      console.error("Error creating booking:", error);
+      res.status(500).json({ message: "Error creating booking" });
     }
   });
   

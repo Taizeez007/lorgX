@@ -33,13 +33,21 @@ export const eventPlaces = pgTable("event_places", {
   description: text("description"),
   address: text("address").notNull(),
   categoryId: integer("category_id").references(() => categories.id),
-  imageUrl: text("image_url"),
+  businessId: integer("business_id").references(() => businessProfiles.id),
+  capacity: integer("capacity").default(100),
+  imageUrls: jsonb("image_urls").default([]), // Array of image URLs for the venue
+  tags: jsonb("tags").default([]), // Array of tags for what the place can be used for
+  amenities: jsonb("amenities").default([]), // Array of amenities like 'wifi', 'parking', 'wheelchair_accessible', etc.
+  foods: jsonb("foods").default([]), // Array of food items with name and price
+  drinks: jsonb("drinks").default([]), // Array of drink items with name and price
   rating: integer("rating"),
   reviewCount: integer("review_count").default(0),
   placeType: text("place_type"),
   createdById: integer("created_by_id").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false),
   deleteRequestedAt: timestamp("delete_requested_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Events
@@ -144,7 +152,13 @@ export const messages = pgTable("messages", {
 export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
   eventId: integer("event_id").references(() => events.id).notNull(),
-  userId: integer("user_id").references(() => users.id).notNull(),
+  userId: integer("user_id").references(() => users.id), // Optional user ID for logged in users
+  // Guest information for non-logged in users
+  guestName: text("guest_name"),
+  guestEmail: text("guest_email"),
+  guestPhone: text("guest_phone"),
+  isGuestBooking: boolean("is_guest_booking").default(false),
+  numberOfTickets: integer("number_of_tickets").default(1),
   status: text("status").notNull().default("confirmed"), // confirmed, cancelled, pending
   paymentStatus: text("payment_status"), // paid, unpaid, refunded
   paymentMethod: text("payment_method"), // stripe, paystack, free
@@ -152,6 +166,7 @@ export const bookings = pgTable("bookings", {
   paymentCurrency: text("payment_currency"),
   paymentReference: text("payment_reference"),
   createdAt: timestamp("created_at").defaultNow(),
+  additionalNotes: text("additional_notes"),
 });
 
 // Notifications
@@ -260,7 +275,43 @@ export const insertFollowerSchema = createInsertSchema(followers).omit({ id: tru
 export const insertCommunitySchema = createInsertSchema(communities).omit({ id: true, createdAt: true, memberCount: true });
 export const insertCommunityMemberSchema = createInsertSchema(communityMembers).omit({ id: true, joinedAt: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true, isRead: true });
-export const insertBookingSchema = createInsertSchema(bookings).omit({ id: true, createdAt: true });
+// Create two booking schemas: one for logged in users and one for guests
+export const insertBookingSchema = createInsertSchema(bookings).omit({ 
+  id: true, 
+  createdAt: true,
+  // Make these optional to support both user and guest bookings
+  userId: true,
+  guestName: true,
+  guestEmail: true,
+  guestPhone: true
+}).superRefine((data, ctx) => {
+  // Validate that either userId is provided or guest information is provided
+  if (!data.userId && !data.isGuestBooking) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Either userId or guest booking information is required",
+      path: ["userId"]
+    });
+  }
+  
+  // If this is a guest booking, validate guest fields
+  if (data.isGuestBooking) {
+    if (!data.guestName) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Guest name is required for guest bookings",
+        path: ["guestName"]
+      });
+    }
+    if (!data.guestEmail) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Guest email is required for guest bookings",
+        path: ["guestEmail"]
+      });
+    }
+  }
+});
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, isRead: true });
 export const insertBusinessProfileSchema = createInsertSchema(businessProfiles).omit({ id: true, verified: true });
 export const insertBusinessEditorSchema = createInsertSchema(businessEditors).omit({ id: true, addedAt: true });
