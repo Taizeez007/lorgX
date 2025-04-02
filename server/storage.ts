@@ -1368,6 +1368,7 @@ import { MongoStorage } from './mongo-storage';
 
 // Use MongoDB storage in production, or if MONGODB_URI is set
 // Otherwise, fall back to MemStorage for development/testing
-export const storage = process.env.MONGODB_URI || process.env.NODE_ENV === 'production' 
+export const storage = process.env.MONGODB_URI && 
+  (process.env.MONGODB_URI.startsWith('mongodb://') || process.env.MONGODB_URI.startsWith('mongodb+srv://'))
   ? new MongoStorage() 
   : new MemStorage();
