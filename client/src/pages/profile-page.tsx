@@ -34,11 +34,17 @@ import {
   Clock,
   Calendar,
   Link as LinkIcon,
-  Loader2
+  Loader2,
+  GraduationCap,
+  BookOpen
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
+import { EducationHistorySection } from "@/components/profile/education-history-section";
+import { WorkHistorySection } from "@/components/profile/work-history-section";
+import { AddEducationForm } from "@/components/profile/add-education-form";
+import { AddWorkForm } from "@/components/profile/add-work-form";
 
 export default function ProfilePage() {
   const [location] = useLocation();
@@ -94,6 +100,17 @@ export default function ProfilePage() {
   const { data: connections, isLoading: isConnectionsLoading } = useQuery({
     queryKey: ["/api/connections", userId || (user ? user.id : '')],
     enabled: (!!userId || !!user) && activeTab === "connections",
+  });
+  
+  // Fetch education and work history
+  const { isLoading: isEducationLoading } = useQuery({
+    queryKey: ["/api/education-history", userId || (user ? user.id : '')],
+    enabled: (!!userId || !!user) && activeTab === "background",
+  });
+  
+  const { isLoading: isWorkLoading } = useQuery({
+    queryKey: ["/api/work-history", userId || (user ? user.id : '')],
+    enabled: (!!userId || !!user) && activeTab === "background",
   });
   
   // Fetch followers/following
@@ -425,9 +442,10 @@ export default function ProfilePage() {
               {/* Profile Tabs */}
               <div className="bg-white rounded-xl shadow-sm p-4">
                 <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="grid grid-cols-2 md:grid-cols-5 mb-6">
+                  <TabsList className="grid grid-cols-2 md:grid-cols-6 mb-6">
                     <TabsTrigger value="posts">Posts</TabsTrigger>
                     <TabsTrigger value="events">Events</TabsTrigger>
+                    <TabsTrigger value="background">Background</TabsTrigger>
                     <TabsTrigger value="connections">Connections</TabsTrigger>
                     <TabsTrigger value="network">Network</TabsTrigger>
                     {isOwnProfile && <TabsTrigger value="preferences">Preferences</TabsTrigger>}
@@ -621,6 +639,56 @@ export default function ProfilePage() {
                         )}
                       </div>
                     )}
+                  </TabsContent>
+                  
+                  <TabsContent value="background">
+                    <div className="grid grid-cols-1 gap-6">
+                      {/* Education Section */}
+                      <Card>
+                        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                          <div>
+                            <CardTitle className="text-lg flex items-center">
+                              <GraduationCap className="h-5 w-5 mr-2" />
+                              Education
+                            </CardTitle>
+                            <CardDescription>Education history and qualifications</CardDescription>
+                          </div>
+                          {isOwnProfile && <AddEducationForm userId={parseInt(userId || user.id.toString())} />}
+                        </CardHeader>
+                        <CardContent>
+                          {isEducationLoading ? (
+                            <div className="flex justify-center py-6">
+                              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                            </div>
+                          ) : (
+                            <EducationHistorySection userId={parseInt(userId || user.id.toString())} isCurrentUser={isOwnProfile} />
+                          )}
+                        </CardContent>
+                      </Card>
+                      
+                      {/* Work Experience Section */}
+                      <Card>
+                        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                          <div>
+                            <CardTitle className="text-lg flex items-center">
+                              <Briefcase className="h-5 w-5 mr-2" />
+                              Work Experience
+                            </CardTitle>
+                            <CardDescription>Professional experience and career history</CardDescription>
+                          </div>
+                          {isOwnProfile && <AddWorkForm userId={parseInt(userId || user.id.toString())} />}
+                        </CardHeader>
+                        <CardContent>
+                          {isWorkLoading ? (
+                            <div className="flex justify-center py-6">
+                              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                            </div>
+                          ) : (
+                            <WorkHistorySection userId={parseInt(userId || user.id.toString())} isCurrentUser={isOwnProfile} />
+                          )}
+                        </CardContent>
+                      </Card>
+                    </div>
                   </TabsContent>
                   
                   <TabsContent value="network">

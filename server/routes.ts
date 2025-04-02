@@ -2220,6 +2220,202 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('WebSocket client disconnected');
     });
   });
+  
+  // Education history endpoints
+  app.get('/api/users/:userId/education', async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const educationHistory = await storage.getEducationHistoryByUser(userId);
+      res.json(educationHistory);
+    } catch (error) {
+      console.error('Error fetching education history:', error);
+      res.status(500).json({ error: 'Failed to fetch education history' });
+    }
+  });
+  
+  app.get('/api/education/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const education = await storage.getEducationHistoryById(id);
+      
+      if (!education) {
+        return res.status(404).json({ error: 'Education history not found' });
+      }
+      
+      res.json(education);
+    } catch (error) {
+      console.error('Error fetching education history:', error);
+      res.status(500).json({ error: 'Failed to fetch education history' });
+    }
+  });
+  
+  app.post('/api/education', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const userId = req.user.id;
+      const newEducation = await storage.createEducationHistory({
+        ...req.body,
+        userId
+      });
+      res.status(201).json(newEducation);
+    } catch (error) {
+      console.error('Error creating education history:', error);
+      res.status(500).json({ error: 'Failed to create education history' });
+    }
+  });
+  
+  app.put('/api/education/:id', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const id = parseInt(req.params.id);
+      const education = await storage.getEducationHistoryById(id);
+      
+      if (!education) {
+        return res.status(404).json({ error: 'Education history not found' });
+      }
+      
+      // Check if the user owns this education record
+      if (education.userId !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      
+      const updatedEducation = await storage.updateEducationHistory(id, req.body);
+      res.json(updatedEducation);
+    } catch (error) {
+      console.error('Error updating education history:', error);
+      res.status(500).json({ error: 'Failed to update education history' });
+    }
+  });
+  
+  app.delete('/api/education/:id', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const id = parseInt(req.params.id);
+      const education = await storage.getEducationHistoryById(id);
+      
+      if (!education) {
+        return res.status(404).json({ error: 'Education history not found' });
+      }
+      
+      // Check if the user owns this education record
+      if (education.userId !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      
+      await storage.deleteEducationHistory(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting education history:', error);
+      res.status(500).json({ error: 'Failed to delete education history' });
+    }
+  });
+  
+  // Work history endpoints
+  app.get('/api/users/:userId/work', async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId);
+      const workHistory = await storage.getWorkHistoryByUser(userId);
+      res.json(workHistory);
+    } catch (error) {
+      console.error('Error fetching work history:', error);
+      res.status(500).json({ error: 'Failed to fetch work history' });
+    }
+  });
+  
+  app.get('/api/work/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const work = await storage.getWorkHistoryById(id);
+      
+      if (!work) {
+        return res.status(404).json({ error: 'Work history not found' });
+      }
+      
+      res.json(work);
+    } catch (error) {
+      console.error('Error fetching work history:', error);
+      res.status(500).json({ error: 'Failed to fetch work history' });
+    }
+  });
+  
+  app.post('/api/work', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const userId = req.user.id;
+      const newWork = await storage.createWorkHistory({
+        ...req.body,
+        userId
+      });
+      res.status(201).json(newWork);
+    } catch (error) {
+      console.error('Error creating work history:', error);
+      res.status(500).json({ error: 'Failed to create work history' });
+    }
+  });
+  
+  app.put('/api/work/:id', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const id = parseInt(req.params.id);
+      const work = await storage.getWorkHistoryById(id);
+      
+      if (!work) {
+        return res.status(404).json({ error: 'Work history not found' });
+      }
+      
+      // Check if the user owns this work record
+      if (work.userId !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      
+      const updatedWork = await storage.updateWorkHistory(id, req.body);
+      res.json(updatedWork);
+    } catch (error) {
+      console.error('Error updating work history:', error);
+      res.status(500).json({ error: 'Failed to update work history' });
+    }
+  });
+  
+  app.delete('/api/work/:id', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const id = parseInt(req.params.id);
+      const work = await storage.getWorkHistoryById(id);
+      
+      if (!work) {
+        return res.status(404).json({ error: 'Work history not found' });
+      }
+      
+      // Check if the user owns this work record
+      if (work.userId !== req.user.id) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      
+      await storage.deleteWorkHistory(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error('Error deleting work history:', error);
+      res.status(500).json({ error: 'Failed to delete work history' });
+    }
+  });
 
   return httpServer;
 }

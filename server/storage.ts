@@ -21,7 +21,9 @@ import {
   postShares, type PostShare, type InsertPostShare,
   blockedUsers, type BlockedUser, type InsertBlockedUser,
   adminUsers, type AdminUser, type InsertAdminUser,
-  unblockRequests, type UnblockRequest, type InsertUnblockRequest
+  unblockRequests, type UnblockRequest, type InsertUnblockRequest,
+  educationHistory, type EducationHistory, type InsertEducationHistory,
+  workHistory, type WorkHistory, type InsertWorkHistory
 } from "@shared/schema";
 
 import { Store } from "express-session";
@@ -180,6 +182,20 @@ export interface IStorage {
   unsavePlace(placeId: number, userId: number): Promise<void>;
   getSavedPlaces(userId: number): Promise<EventPlace[]>;
   
+  // Education history methods
+  getEducationHistoryByUser(userId: number): Promise<EducationHistory[]>;
+  getEducationHistoryById(id: number): Promise<EducationHistory | undefined>;
+  createEducationHistory(education: InsertEducationHistory): Promise<EducationHistory>;
+  updateEducationHistory(id: number, education: Partial<InsertEducationHistory>): Promise<EducationHistory | undefined>;
+  deleteEducationHistory(id: number): Promise<void>;
+  
+  // Work history methods
+  getWorkHistoryByUser(userId: number): Promise<WorkHistory[]>;
+  getWorkHistoryById(id: number): Promise<WorkHistory | undefined>;
+  createWorkHistory(work: InsertWorkHistory): Promise<WorkHistory>;
+  updateWorkHistory(id: number, work: Partial<InsertWorkHistory>): Promise<WorkHistory | undefined>;
+  deleteWorkHistory(id: number): Promise<void>;
+  
   // Session store
   sessionStore: Store;
 }
@@ -208,6 +224,8 @@ export class MemStorage implements IStorage {
   private blockedUsers: Map<number, BlockedUser>;
   private adminUsers: Map<number, AdminUser>;
   private unblockRequests: Map<number, UnblockRequest>;
+  private educationHistory: Map<number, EducationHistory>;
+  private workHistory: Map<number, WorkHistory>;
   
   currentUserId: number;
   currentCategoryId: number;
@@ -232,6 +250,8 @@ export class MemStorage implements IStorage {
   currentBlockedUserId: number;
   currentAdminUserId: number;
   currentUnblockRequestId: number;
+  currentEducationHistoryId: number;
+  currentWorkHistoryId: number;
   sessionStore: Store;
 
   constructor() {
@@ -258,6 +278,8 @@ export class MemStorage implements IStorage {
     this.blockedUsers = new Map();
     this.adminUsers = new Map();
     this.unblockRequests = new Map();
+    this.educationHistory = new Map();
+    this.workHistory = new Map();
     
     this.currentUserId = 1;
     this.currentCategoryId = 1;
@@ -282,6 +304,8 @@ export class MemStorage implements IStorage {
     this.currentBlockedUserId = 1;
     this.currentAdminUserId = 1;
     this.currentUnblockRequestId = 1;
+    this.currentEducationHistoryId = 1;
+    this.currentWorkHistoryId = 1;
     
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000, // Clear expired sessions every 24h
@@ -1534,6 +1558,90 @@ export class MemStorage implements IStorage {
     }
     
     return updatedRequest;
+  }
+  
+  // Education history methods
+  async getEducationHistoryByUser(userId: number): Promise<EducationHistory[]> {
+    return Array.from(this.educationHistory.values())
+      .filter(edu => edu.userId === userId)
+      .sort((a, b) => {
+        // Sort by end year descending (most recent first)
+        const dateA = a.endYear || 9999;
+        const dateB = b.endYear || 9999;
+        return dateB - dateA;
+      });
+  }
+  
+  async getEducationHistoryById(id: number): Promise<EducationHistory | undefined> {
+    return this.educationHistory.get(id);
+  }
+  
+  async createEducationHistory(education: InsertEducationHistory): Promise<EducationHistory> {
+    const id = this.currentEducationHistoryId++;
+    const createdAt = new Date();
+    const newEducation: EducationHistory = { 
+      ...education, 
+      id, 
+      createdAt,
+      isVerified: false 
+    };
+    this.educationHistory.set(id, newEducation);
+    return newEducation;
+  }
+  
+  async updateEducationHistory(id: number, education: Partial<InsertEducationHistory>): Promise<EducationHistory | undefined> {
+    const existingEducation = this.educationHistory.get(id);
+    if (!existingEducation) return undefined;
+    
+    const updatedEducation = { ...existingEducation, ...education };
+    this.educationHistory.set(id, updatedEducation);
+    return updatedEducation;
+  }
+  
+  async deleteEducationHistory(id: number): Promise<void> {
+    this.educationHistory.delete(id);
+  }
+  
+  // Work history methods
+  async getWorkHistoryByUser(userId: number): Promise<WorkHistory[]> {
+    return Array.from(this.workHistory.values())
+      .filter(work => work.userId === userId)
+      .sort((a, b) => {
+        // Sort by end date descending (most recent first, with current jobs at top)
+        const dateA = a.endDate ? new Date(a.endDate).getTime() : Date.now() + 999999;
+        const dateB = b.endDate ? new Date(b.endDate).getTime() : Date.now() + 999999;
+        return dateB - dateA;
+      });
+  }
+  
+  async getWorkHistoryById(id: number): Promise<WorkHistory | undefined> {
+    return this.workHistory.get(id);
+  }
+  
+  async createWorkHistory(work: InsertWorkHistory): Promise<WorkHistory> {
+    const id = this.currentWorkHistoryId++;
+    const createdAt = new Date();
+    const newWork: WorkHistory = { 
+      ...work, 
+      id, 
+      createdAt,
+      isVerified: false
+    };
+    this.workHistory.set(id, newWork);
+    return newWork;
+  }
+  
+  async updateWorkHistory(id: number, work: Partial<InsertWorkHistory>): Promise<WorkHistory | undefined> {
+    const existingWork = this.workHistory.get(id);
+    if (!existingWork) return undefined;
+    
+    const updatedWork = { ...existingWork, ...work };
+    this.workHistory.set(id, updatedWork);
+    return updatedWork;
+  }
+  
+  async deleteWorkHistory(id: number): Promise<void> {
+    this.workHistory.delete(id);
   }
 }
 

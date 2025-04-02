@@ -11,7 +11,7 @@ export const users = pgTable("users", {
   fullName: text("full_name").notNull(),
   bio: text("bio"),
   profileImage: text("profile_image"),
-  career: text("career"),
+  occupation: text("occupation"), // Current occupation or student status
   preferences: jsonb("preferences"),
   isBusinessAccount: boolean("is_business_account").default(false),
   createdAt: timestamp("created_at").defaultNow(),
@@ -281,10 +281,44 @@ export const unblockRequests = pgTable("unblock_requests", {
   resolvedBy: integer("resolved_by").references(() => users.id),
 });
 
+// Education history
+export const educationHistory = pgTable("education_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  schoolName: text("school_name").notNull(),
+  degree: text("degree"),
+  fieldOfStudy: text("field_of_study"),
+  startYear: integer("start_year"),
+  graduationYear: integer("graduation_year"),
+  description: text("description"),
+  imageUrl: text("image_url"), // For certificates or proof of education
+  isVerified: boolean("is_verified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Work history
+export const workHistory = pgTable("work_history", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  companyName: text("company_name").notNull(),
+  position: text("position").notNull(),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  isCurrentPosition: boolean("is_current_position").default(false),
+  location: text("location"),
+  description: text("description"),
+  workLink: text("work_link"), // Link to work portfolio, website, projects
+  imageUrl: text("image_url"), // For work samples or company logo
+  isVerified: boolean("is_verified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, isDeleted: true, deleteRequestedAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertEventPlaceSchema = createInsertSchema(eventPlaces).omit({ id: true, isDeleted: true, deleteRequestedAt: true });
+export const insertEducationHistorySchema = createInsertSchema(educationHistory).omit({ id: true, createdAt: true, isVerified: true });
+export const insertWorkHistorySchema = createInsertSchema(workHistory).omit({ id: true, createdAt: true, isVerified: true });
 export const insertEventSchema = createInsertSchema(events).omit({ 
   id: true, 
   attendeeCount: true, 
@@ -426,6 +460,12 @@ export type InsertSavedPlace = z.infer<typeof insertSavedPlaceSchema>;
 
 export type PostShare = typeof postShares.$inferSelect;
 export type InsertPostShare = z.infer<typeof insertPostShareSchema>;
+
+export type EducationHistory = typeof educationHistory.$inferSelect;
+export type InsertEducationHistory = z.infer<typeof insertEducationHistorySchema>;
+
+export type WorkHistory = typeof workHistory.$inferSelect;
+export type InsertWorkHistory = z.infer<typeof insertWorkHistorySchema>;
 
 //Account management feature schemas are already defined above
 //Do not add duplicate declarations
