@@ -3,6 +3,8 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { WebSocketServer, WebSocket } from "ws";
+import Stripe from "stripe";
+import Paystack from "paystack";
 import { 
   InsertPost, 
   InsertEvent, 
@@ -16,8 +18,18 @@ import {
   InsertComment,
   InsertBusinessProfile,
   InsertBusinessEditor,
+  InsertPostLike,
+  InsertEventLike,
+  InsertSavedEvent,
+  InsertSavedPlace,
+  InsertPostShare,
   insertPostSchema,
   insertEventSchema,
+  insertPostLikeSchema,
+  insertEventLikeSchema,
+  insertSavedEventSchema,
+  insertSavedPlaceSchema,
+  insertPostShareSchema,
   insertEventPlaceSchema,
   insertConnectionSchema,
   insertFollowerSchema,
@@ -39,6 +51,17 @@ const ensureAuthenticated = (req: Request, res: Response, next: Function) => {
   }
   res.status(401).json({ message: "Unauthorized" });
 };
+
+// Initialize payment gateways with placeholder values - real values to be added later
+// Stripe configuration
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy_key_for_stripe';
+const stripe = new Stripe(STRIPE_SECRET_KEY, {
+  apiVersion: '2024-01-01',
+});
+
+// Paystack configuration
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_dummy_key_for_paystack';
+const paystack = Paystack(PAYSTACK_SECRET_KEY);
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
@@ -876,6 +899,715 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User account deletion routes
+  app.post("/api/user/delete-request", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const updatedUser = await storage.requestDeleteUser(userId);
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.status(200).json({ message: "Delete request received. Account will be deleted in 24 hours (or 72 hours for business accounts)." });
+    } catch (error) {
+      console.error("Error requesting user deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/user/cancel-delete", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const updatedUser = await storage.cancelDeleteUser(userId);
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.status(200).json({ message: "Delete request canceled." });
+    } catch (error) {
+      console.error("Error canceling user deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Event place deletion routes
+  app.post("/api/places/:id/delete-request", ensureAuthenticated, async (req, res) => {
+    try {
+      const placeId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(placeId)) {
+        return res.status(400).json({ message: "Invalid place ID" });
+      }
+      
+      // Check if the user is authorized to delete this place
+      const place = await storage.getEventPlace(placeId);
+      
+      if (!place) {
+        return res.status(404).json({ message: "Place not found" });
+      }
+      
+      if (place.createdById !== userId) {
+        return res.status(403).json({ message: "Not authorized to delete this place" });
+      }
+      
+      const updatedPlace = await storage.requestDeleteEventPlace(placeId);
+      
+      res.status(200).json({ message: "Delete request received. Place will be deleted in 72 hours." });
+    } catch (error) {
+      console.error("Error requesting place deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/places/:id/cancel-delete", ensureAuthenticated, async (req, res) => {
+    try {
+      const placeId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(placeId)) {
+        return res.status(400).json({ message: "Invalid place ID" });
+      }
+      
+      // Check if the user is authorized to modify this place
+      const place = await storage.getEventPlace(placeId);
+      
+      if (!place) {
+        return res.status(404).json({ message: "Place not found" });
+      }
+      
+      if (place.createdById !== userId) {
+        return res.status(403).json({ message: "Not authorized to modify this place" });
+      }
+      
+      const updatedPlace = await storage.cancelDeleteEventPlace(placeId);
+      
+      res.status(200).json({ message: "Delete request canceled." });
+    } catch (error) {
+      console.error("Error canceling place deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Event deletion and social interaction routes
+  app.post("/api/events/:id/delete-request", ensureAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Check if the user is authorized to delete this event
+      const event = await storage.getEvent(eventId);
+      
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      if (event.createdById !== userId) {
+        return res.status(403).json({ message: "Not authorized to delete this event" });
+      }
+      
+      const updatedEvent = await storage.requestDeleteEvent(eventId);
+      
+      res.status(200).json({ message: "Delete request received. Event will be deleted in 72 hours." });
+    } catch (error) {
+      console.error("Error requesting event deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/events/:id/cancel-delete", ensureAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Check if the user is authorized to modify this event
+      const event = await storage.getEvent(eventId);
+      
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      if (event.createdById !== userId) {
+        return res.status(403).json({ message: "Not authorized to modify this event" });
+      }
+      
+      const updatedEvent = await storage.cancelDeleteEvent(eventId);
+      
+      res.status(200).json({ message: "Delete request canceled." });
+    } catch (error) {
+      console.error("Error canceling event deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Post social interactions and deletion routes
+  app.post("/api/posts/:id/like", ensureAuthenticated, async (req, res) => {
+    try {
+      const postId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(postId)) {
+        return res.status(400).json({ message: "Invalid post ID" });
+      }
+      
+      // Check if post exists
+      const post = await storage.getPost(postId);
+      
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      
+      await storage.likePost(postId, userId);
+      
+      res.status(200).json({ message: "Post liked successfully" });
+    } catch (error) {
+      console.error("Error liking post:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.delete("/api/posts/:id/like", ensureAuthenticated, async (req, res) => {
+    try {
+      const postId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(postId)) {
+        return res.status(400).json({ message: "Invalid post ID" });
+      }
+      
+      await storage.unlikePost(postId, userId);
+      
+      res.status(200).json({ message: "Post unliked successfully" });
+    } catch (error) {
+      console.error("Error unliking post:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/posts/:id/share", ensureAuthenticated, async (req, res) => {
+    try {
+      const postId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      const { sharedTo } = req.body;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(postId)) {
+        return res.status(400).json({ message: "Invalid post ID" });
+      }
+      
+      if (!sharedTo) {
+        return res.status(400).json({ message: "Missing sharedTo parameter" });
+      }
+      
+      // Check if post exists
+      const post = await storage.getPost(postId);
+      
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      
+      await storage.sharePost(postId, userId, sharedTo);
+      
+      res.status(200).json({ message: "Post shared successfully" });
+    } catch (error) {
+      console.error("Error sharing post:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/posts/:id/delete-request", ensureAuthenticated, async (req, res) => {
+    try {
+      const postId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(postId)) {
+        return res.status(400).json({ message: "Invalid post ID" });
+      }
+      
+      // Check if the user is authorized to delete this post
+      const post = await storage.getPost(postId);
+      
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      
+      if (post.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to delete this post" });
+      }
+      
+      const updatedPost = await storage.requestDeletePost(postId);
+      
+      res.status(200).json({ message: "Delete request received. Post will be deleted in 24 hours." });
+    } catch (error) {
+      console.error("Error requesting post deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/posts/:id/cancel-delete", ensureAuthenticated, async (req, res) => {
+    try {
+      const postId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(postId)) {
+        return res.status(400).json({ message: "Invalid post ID" });
+      }
+      
+      // Check if the user is authorized to modify this post
+      const post = await storage.getPost(postId);
+      
+      if (!post) {
+        return res.status(404).json({ message: "Post not found" });
+      }
+      
+      if (post.userId !== userId) {
+        return res.status(403).json({ message: "Not authorized to modify this post" });
+      }
+      
+      const updatedPost = await storage.cancelDeletePost(postId);
+      
+      res.status(200).json({ message: "Delete request canceled." });
+    } catch (error) {
+      console.error("Error canceling post deletion:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Event social interactions
+  app.post("/api/events/:id/like", ensureAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Check if event exists
+      const event = await storage.getEvent(eventId);
+      
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      await storage.likeEvent(eventId, userId);
+      
+      res.status(200).json({ message: "Event liked successfully" });
+    } catch (error) {
+      console.error("Error liking event:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.delete("/api/events/:id/like", ensureAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      await storage.unlikeEvent(eventId, userId);
+      
+      res.status(200).json({ message: "Event unliked successfully" });
+    } catch (error) {
+      console.error("Error unliking event:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/events/:id/save", ensureAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      // Check if event exists
+      const event = await storage.getEvent(eventId);
+      
+      if (!event) {
+        return res.status(404).json({ message: "Event not found" });
+      }
+      
+      await storage.saveEvent(eventId, userId);
+      
+      res.status(200).json({ message: "Event saved successfully" });
+    } catch (error) {
+      console.error("Error saving event:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.delete("/api/events/:id/save", ensureAuthenticated, async (req, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(eventId)) {
+        return res.status(400).json({ message: "Invalid event ID" });
+      }
+      
+      await storage.unsaveEvent(eventId, userId);
+      
+      res.status(200).json({ message: "Event unsaved successfully" });
+    } catch (error) {
+      console.error("Error unsaving event:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.get("/api/user/saved-events", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const savedEvents = await storage.getSavedEvents(userId);
+      
+      res.status(200).json(savedEvents);
+    } catch (error) {
+      console.error("Error fetching saved events:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.get("/api/user/liked-events", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const likedEvents = await storage.getLikedEvents(userId);
+      
+      res.status(200).json(likedEvents);
+    } catch (error) {
+      console.error("Error fetching liked events:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  // Place save/unsave routes
+  app.post("/api/places/:id/save", ensureAuthenticated, async (req, res) => {
+    try {
+      const placeId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(placeId)) {
+        return res.status(400).json({ message: "Invalid place ID" });
+      }
+      
+      // Check if place exists
+      const place = await storage.getEventPlace(placeId);
+      
+      if (!place) {
+        return res.status(404).json({ message: "Place not found" });
+      }
+      
+      await storage.savePlace(placeId, userId);
+      
+      res.status(200).json({ message: "Place saved successfully" });
+    } catch (error) {
+      console.error("Error saving place:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.delete("/api/places/:id/save", ensureAuthenticated, async (req, res) => {
+    try {
+      const placeId = parseInt(req.params.id);
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (isNaN(placeId)) {
+        return res.status(400).json({ message: "Invalid place ID" });
+      }
+      
+      await storage.unsavePlace(placeId, userId);
+      
+      res.status(200).json({ message: "Place unsaved successfully" });
+    } catch (error) {
+      console.error("Error unsaving place:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.get("/api/user/saved-places", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const savedPlaces = await storage.getSavedPlaces(userId);
+      
+      res.status(200).json(savedPlaces);
+    } catch (error) {
+      console.error("Error fetching saved places:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.get("/api/user/liked-posts", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const likedPosts = await storage.getLikedPosts(userId);
+      
+      res.status(200).json(likedPosts);
+    } catch (error) {
+      console.error("Error fetching liked posts:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.get("/api/user/shared-posts", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const sharedPosts = await storage.getSharedPosts(userId);
+      
+      res.status(200).json(sharedPosts);
+    } catch (error) {
+      console.error("Error fetching shared posts:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Payment integration for events with more than 300 attendees
+  
+  // Stripe payment integration
+  app.post("/api/payments/stripe/create-payment-intent", ensureAuthenticated, async (req, res) => {
+    try {
+      const { amount, eventId, currency = "usd" } = req.body;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (!amount || !eventId) {
+        return res.status(400).json({ message: "Amount and eventId are required" });
+      }
+      
+      // Convert amount to cents
+      const amountInCents = Math.round(parseFloat(amount) * 100);
+      
+      // Create payment intent
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amountInCents,
+        currency,
+        metadata: { 
+          eventId: eventId.toString(),
+          userId: userId.toString() 
+        }
+      });
+      
+      // Return client secret
+      res.status(200).json({
+        clientSecret: paymentIntent.client_secret,
+        paymentIntentId: paymentIntent.id
+      });
+    } catch (error) {
+      console.error("Error creating Stripe payment intent:", error);
+      res.status(500).json({ message: "Error processing payment" });
+    }
+  });
+  
+  // Stripe webhook handler for payment confirmation
+  app.post("/api/payments/stripe/webhook", async (req, res) => {
+    // In production, this should verify webhook signatures
+    try {
+      const event = req.body;
+      
+      if (event.type === 'payment_intent.succeeded') {
+        const paymentIntent = event.data.object;
+        const eventId = parseInt(paymentIntent.metadata.eventId);
+        const userId = parseInt(paymentIntent.metadata.userId);
+        
+        // Create booking after successful payment
+        await storage.createBooking({
+          eventId,
+          userId,
+          paymentStatus: 'paid',
+          paymentMethod: 'stripe',
+          paymentAmount: paymentIntent.amount / 100,
+          paymentCurrency: paymentIntent.currency,
+          paymentReference: paymentIntent.id
+        });
+      }
+      
+      res.status(200).json({ received: true });
+    } catch (error) {
+      console.error("Error handling Stripe webhook:", error);
+      res.status(500).json({ message: "Error processing webhook" });
+    }
+  });
+  
+  // Paystack payment integration
+  app.post("/api/payments/paystack/initialize", ensureAuthenticated, async (req, res) => {
+    try {
+      const { amount, eventId, email, currency = "NGN" } = req.body;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      if (!amount || !eventId || !email) {
+        return res.status(400).json({ message: "Amount, eventId, and email are required" });
+      }
+      
+      // Initialize transaction
+      const response = await paystack.transaction.initialize({
+        amount: Math.round(parseFloat(amount) * 100), // Convert to kobo (smallest unit)
+        email,
+        metadata: {
+          eventId: eventId.toString(),
+          userId: userId.toString()
+        },
+        currency
+      });
+      
+      res.status(200).json(response.data);
+    } catch (error) {
+      console.error("Error initializing Paystack payment:", error);
+      res.status(500).json({ message: "Error processing payment" });
+    }
+  });
+  
+  // Paystack payment verification
+  app.get("/api/payments/paystack/verify/:reference", ensureAuthenticated, async (req, res) => {
+    try {
+      const { reference } = req.params;
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      // Verify transaction
+      const response = await paystack.transaction.verify(reference);
+      
+      if (response.data.status === 'success') {
+        const { metadata } = response.data;
+        const eventId = parseInt(metadata.eventId);
+        
+        // Create booking after successful payment
+        await storage.createBooking({
+          eventId,
+          userId,
+          paymentStatus: 'paid',
+          paymentMethod: 'paystack',
+          paymentAmount: response.data.amount / 100,
+          paymentCurrency: response.data.currency,
+          paymentReference: reference
+        });
+        
+        res.status(200).json({ status: 'success', data: response.data });
+      } else {
+        res.status(400).json({ status: 'failed', message: "Payment verification failed" });
+      }
+    } catch (error) {
+      console.error("Error verifying Paystack payment:", error);
+      res.status(500).json({ message: "Error verifying payment" });
+    }
+  });
+  
   // Create HTTP server
   const httpServer = createServer(app);
   

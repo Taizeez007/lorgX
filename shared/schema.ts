@@ -15,6 +15,8 @@ export const users = pgTable("users", {
   preferences: jsonb("preferences"),
   isBusinessAccount: boolean("is_business_account").default(false),
   createdAt: timestamp("created_at").defaultNow(),
+  isDeleted: boolean("is_deleted").default(false),
+  deleteRequestedAt: timestamp("delete_requested_at"),
 });
 
 // Event categories
@@ -36,6 +38,8 @@ export const eventPlaces = pgTable("event_places", {
   reviewCount: integer("review_count").default(0),
   placeType: text("place_type"),
   createdById: integer("created_by_id").references(() => users.id),
+  isDeleted: boolean("is_deleted").default(false),
+  deleteRequestedAt: timestamp("delete_requested_at"),
 });
 
 // Events
@@ -57,6 +61,11 @@ export const events = pgTable("events", {
   price: text("price"),
   isLive: boolean("is_live").default(false),
   attendeeCount: integer("attendee_count").default(0),
+  maxAttendees: integer("max_attendees").default(300), // 300 for free events by default
+  isDeleted: boolean("is_deleted").default(false),
+  deleteRequestedAt: timestamp("delete_requested_at"),
+  likeCount: integer("like_count").default(0),
+  saveCount: integer("save_count").default(0),
 });
 
 // Posts (similar to Instagram posts)
@@ -68,6 +77,9 @@ export const posts = pgTable("posts", {
   createdAt: timestamp("created_at").defaultNow(),
   likeCount: integer("like_count").default(0),
   commentCount: integer("comment_count").default(0),
+  shareCount: integer("share_count").default(0),
+  isDeleted: boolean("is_deleted").default(false),
+  deleteRequestedAt: timestamp("delete_requested_at"),
 });
 
 // Comments on posts
@@ -134,6 +146,11 @@ export const bookings = pgTable("bookings", {
   eventId: integer("event_id").references(() => events.id).notNull(),
   userId: integer("user_id").references(() => users.id).notNull(),
   status: text("status").notNull().default("confirmed"), // confirmed, cancelled, pending
+  paymentStatus: text("payment_status"), // paid, unpaid, refunded
+  paymentMethod: text("payment_method"), // stripe, paystack, free
+  paymentAmount: integer("payment_amount"),
+  paymentCurrency: text("payment_currency"),
+  paymentReference: text("payment_reference"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -175,22 +192,83 @@ export const businessEditors = pgTable("business_editors", {
   addedAt: timestamp("added_at").defaultNow(),
 });
 
+// Post likes
+export const postLikes = pgTable("post_likes", {
+  id: serial("id").primaryKey(),
+  postId: integer("post_id").references(() => posts.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Event likes
+export const eventLikes = pgTable("event_likes", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id").references(() => events.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Saved events
+export const savedEvents = pgTable("saved_events", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id").references(() => events.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Saved places
+export const savedPlaces = pgTable("saved_places", {
+  id: serial("id").primaryKey(),
+  placeId: integer("place_id").references(() => eventPlaces.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Post shares
+export const postShares = pgTable("post_shares", {
+  id: serial("id").primaryKey(),
+  postId: integer("post_id").references(() => posts.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  sharedTo: text("shared_to").notNull(), // "timeline", "direct", "external"
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, isDeleted: true, deleteRequestedAt: true });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
-export const insertEventPlaceSchema = createInsertSchema(eventPlaces).omit({ id: true });
-export const insertEventSchema = createInsertSchema(events).omit({ id: true, attendeeCount: true });
-export const insertPostSchema = createInsertSchema(posts).omit({ id: true, createdAt: true, likeCount: true, commentCount: true });
+export const insertEventPlaceSchema = createInsertSchema(eventPlaces).omit({ id: true, isDeleted: true, deleteRequestedAt: true });
+export const insertEventSchema = createInsertSchema(events).omit({ 
+  id: true, 
+  attendeeCount: true, 
+  isDeleted: true, 
+  deleteRequestedAt: true, 
+  likeCount: true, 
+  saveCount: true 
+});
+export const insertPostSchema = createInsertSchema(posts).omit({ 
+  id: true, 
+  createdAt: true, 
+  likeCount: true, 
+  commentCount: true, 
+  shareCount: true, 
+  isDeleted: true, 
+  deleteRequestedAt: true 
+});
 export const insertCommentSchema = createInsertSchema(comments).omit({ id: true, createdAt: true });
 export const insertConnectionSchema = createInsertSchema(connections).omit({ id: true, createdAt: true, status: true });
 export const insertFollowerSchema = createInsertSchema(followers).omit({ id: true, createdAt: true });
 export const insertCommunitySchema = createInsertSchema(communities).omit({ id: true, createdAt: true, memberCount: true });
 export const insertCommunityMemberSchema = createInsertSchema(communityMembers).omit({ id: true, joinedAt: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true, isRead: true });
-export const insertBookingSchema = createInsertSchema(bookings).omit({ id: true, createdAt: true, status: true });
+export const insertBookingSchema = createInsertSchema(bookings).omit({ id: true, createdAt: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, isRead: true });
 export const insertBusinessProfileSchema = createInsertSchema(businessProfiles).omit({ id: true, verified: true });
 export const insertBusinessEditorSchema = createInsertSchema(businessEditors).omit({ id: true, addedAt: true });
+export const insertPostLikeSchema = createInsertSchema(postLikes).omit({ id: true, createdAt: true });
+export const insertEventLikeSchema = createInsertSchema(eventLikes).omit({ id: true, createdAt: true });
+export const insertSavedEventSchema = createInsertSchema(savedEvents).omit({ id: true, createdAt: true });
+export const insertSavedPlaceSchema = createInsertSchema(savedPlaces).omit({ id: true, createdAt: true });
+export const insertPostShareSchema = createInsertSchema(postShares).omit({ id: true, createdAt: true });
 
 // Types
 export type User = typeof users.$inferSelect;
@@ -237,3 +315,18 @@ export type InsertBusinessProfile = z.infer<typeof insertBusinessProfileSchema>;
 
 export type BusinessEditor = typeof businessEditors.$inferSelect;
 export type InsertBusinessEditor = z.infer<typeof insertBusinessEditorSchema>;
+
+export type PostLike = typeof postLikes.$inferSelect;
+export type InsertPostLike = z.infer<typeof insertPostLikeSchema>;
+
+export type EventLike = typeof eventLikes.$inferSelect;
+export type InsertEventLike = z.infer<typeof insertEventLikeSchema>;
+
+export type SavedEvent = typeof savedEvents.$inferSelect;
+export type InsertSavedEvent = z.infer<typeof insertSavedEventSchema>;
+
+export type SavedPlace = typeof savedPlaces.$inferSelect;
+export type InsertSavedPlace = z.infer<typeof insertSavedPlaceSchema>;
+
+export type PostShare = typeof postShares.$inferSelect;
+export type InsertPostShare = z.infer<typeof insertPostShareSchema>;
