@@ -27,16 +27,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 // Define login form schema
 const loginSchema = z.object({
-  username: z.string().min(1, "Username is required"),
+  username: z.string().min(1, "Username or email is required"),
   password: z.string().min(1, "Password is required"),
 });
 
 // Define register form schema
 const registerSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
+  email: z.string().email("Please enter a valid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   confirmPassword: z.string().min(6, "Please confirm your password"),
-  fullName: z.string().min(1, "Full name is required"),
+  fullName: z.string().min(1, {
+    message: "Full name is required for individual accounts or organization name for business accounts"
+  }),
   isBusinessAccount: z.boolean().optional(),
   bio: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
@@ -69,6 +72,7 @@ export default function AuthPage() {
     resolver: zodResolver(registerSchema),
     defaultValues: {
       username: "",
+      email: "",
       password: "",
       confirmPassword: "",
       fullName: "",
@@ -125,9 +129,9 @@ export default function AuthPage() {
                             name="username"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Username</FormLabel>
+                                <FormLabel>Username or Email</FormLabel>
                                 <FormControl>
-                                  <Input placeholder="johndoe" {...field} />
+                                  <Input placeholder="johndoe or john@example.com" {...field} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -189,15 +193,21 @@ export default function AuthPage() {
                           <FormField
                             control={registerForm.control}
                             name="fullName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Full Name</FormLabel>
-                                <FormControl>
-                                  <Input placeholder="John Doe" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
+                            render={({ field }) => {
+                              const isBusinessAccount = registerForm.watch("isBusinessAccount");
+                              return (
+                                <FormItem>
+                                  <FormLabel>{isBusinessAccount ? "Organization Name" : "Full Name"}</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      placeholder={isBusinessAccount ? "Acme Corporation" : "John Doe"} 
+                                      {...field} 
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              );
+                            }}
                           />
                           <FormField
                             control={registerForm.control}
@@ -207,6 +217,19 @@ export default function AuthPage() {
                                 <FormLabel>Username</FormLabel>
                                 <FormControl>
                                   <Input placeholder="johndoe" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={registerForm.control}
+                            name="email"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Email</FormLabel>
+                                <FormControl>
+                                  <Input type="email" placeholder="john@example.com" {...field} />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>

@@ -5,11 +5,26 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import { User } from "@shared/schema";
+import { User as UserType } from "@shared/schema";
 
 declare global {
   namespace Express {
-    interface User extends User {}
+    // Define the Express User interface with explicit properties instead of extending
+    interface User {
+      id: number;
+      username: string;
+      password: string;
+      email: string;
+      fullName: string;
+      bio: string | null;
+      profileImage: string | null;
+      occupation: string | null;
+      preferences: unknown;
+      isBusinessAccount: boolean | null;
+      createdAt: Date | null;
+      isDeleted: boolean | null;
+      deleteRequestedAt: Date | null;
+    }
   }
 }
 
@@ -49,7 +64,14 @@ export function setupAuth(app: Express) {
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {
-      const user = await storage.getUserByUsername(username);
+      // Check if the input is an email (contains @)
+      const isEmail = username.includes('@');
+      
+      // Try to get user either by username or email
+      const user = isEmail 
+        ? await storage.getUserByEmail(username)
+        : await storage.getUserByUsername(username);
+      
       if (!user || !(await comparePasswords(password, user.password))) {
         return done(null, false);
       } else {
@@ -65,15 +87,20 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/register", async (req, res, next) => {
-    const { username, password, fullName } = req.body;
+    const { username, password, fullName, email } = req.body;
     
-    if (!username || !password || !fullName) {
+    if (!username || !password || !fullName || !email) {
       return res.status(400).send("Missing required fields");
     }
     
-    const existingUser = await storage.getUserByUsername(username);
-    if (existingUser) {
+    const existingUsername = await storage.getUserByUsername(username);
+    if (existingUsername) {
       return res.status(400).send("Username already exists");
+    }
+    
+    const existingEmail = await storage.getUserByEmail(email);
+    if (existingEmail) {
+      return res.status(400).send("Email already exists");
     }
 
     try {
@@ -81,6 +108,7 @@ export function setupAuth(app: Express) {
         username,
         password: await hashPassword(password),
         fullName,
+        email,
         isBusinessAccount: req.body.isBusinessAccount || false,
         bio: req.body.bio || "",
         profileImage: req.body.profileImage || "",
@@ -89,7 +117,10 @@ export function setupAuth(app: Express) {
       req.login(user, (err) => {
         if (err) return next(err);
         
-        const { password, ...userWithoutPassword } = user;
+        // Create a safe user object without sensitive data
+        const userWithoutPassword = { ...user } as any;
+        delete userWithoutPassword.password;
+        
         res.status(201).json(userWithoutPassword);
       });
     } catch (error) {
@@ -99,7 +130,10 @@ export function setupAuth(app: Express) {
 
   app.post("/api/login", passport.authenticate("local"), (req, res) => {
     if (req.user) {
-      const { password, ...userWithoutPassword } = req.user;
+      // Create a safe user object without sensitive data
+      const userWithoutPassword = { ...req.user } as any;
+      delete userWithoutPassword.password;
+      
       res.status(200).json(userWithoutPassword);
     }
   });
@@ -115,7 +149,10 @@ export function setupAuth(app: Express) {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     
     if (req.user) {
-      const { password, ...userWithoutPassword } = req.user;
+      // Create a safe user object without sensitive data
+      const userWithoutPassword = { ...req.user } as any;
+      delete userWithoutPassword.password;
+      
       res.json(userWithoutPassword);
     } else {
       res.sendStatus(401);
