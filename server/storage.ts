@@ -18,10 +18,7 @@ import {
   eventLikes, type EventLike, type InsertEventLike,
   savedEvents, type SavedEvent, type InsertSavedEvent,
   savedPlaces, type SavedPlace, type InsertSavedPlace,
-  postShares, type PostShare, type InsertPostShare,
-  blockedUsers, type BlockedUser, type InsertBlockedUser,
-  adminUsers, type AdminUser, type InsertAdminUser,
-  unblockRequests, type UnblockRequest, type InsertUnblockRequest
+  postShares, type PostShare, type InsertPostShare
 } from "@shared/schema";
 
 import { Store } from "express-session";
