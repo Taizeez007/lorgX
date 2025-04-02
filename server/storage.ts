@@ -35,6 +35,7 @@ export interface IStorage {
   requestDeleteUser(id: number): Promise<User | undefined>;
   cancelDeleteUser(id: number): Promise<User | undefined>;
   deleteUser(id: number): Promise<void>;
+  updateUserPreferences(userId: number, preferences: any): Promise<User | undefined>;
   
   // Category methods
   getCategories(): Promise<Category[]>;
@@ -65,6 +66,7 @@ export interface IStorage {
   unsaveEvent(eventId: number, userId: number): Promise<void>;
   getSavedEvents(userId: number): Promise<Event[]>;
   getLikedEvents(userId: number): Promise<Event[]>;
+  getRecommendedEvents(userId: number, limit?: number): Promise<Event[]>;
   requestDeleteEvent(id: number): Promise<Event | undefined>;
   cancelDeleteEvent(id: number): Promise<Event | undefined>;
   deleteEvent(id: number): Promise<void>;
@@ -282,6 +284,19 @@ export class MemStorage implements IStorage {
     
     const updatedUser = { ...existingUser, ...userData };
     this.users.set(id, updatedUser);
+    return updatedUser;
+  }
+  
+  async updateUserPreferences(userId: number, preferences: any): Promise<User | undefined> {
+    const existingUser = this.users.get(userId);
+    if (!existingUser) return undefined;
+    
+    // Merge existing preferences with new preferences
+    const currentPreferences = existingUser.preferences || {};
+    const updatedPreferences = { ...currentPreferences, ...preferences };
+    
+    const updatedUser = { ...existingUser, preferences: updatedPreferences };
+    this.users.set(userId, updatedUser);
     return updatedUser;
   }
 
@@ -932,6 +947,122 @@ export class MemStorage implements IStorage {
       const event = this.events.get(entry.eventId);
       return event!;
     }).filter(Boolean);
+  }
+  
+  async getRecommendedEvents(userId: number, limit: number = 10): Promise<Event[]> {
+    const user = this.users.get(userId);
+    if (!user) return [];
+    
+    // Get all public upcoming events
+    const now = new Date();
+    const upcomingEvents = Array.from(this.events.values())
+      .filter(event => 
+        event.isPublic && 
+        new Date(event.startDate) > now &&
+        !event.isDeleted
+      );
+    
+    // If no user preferences, just return most popular upcoming events
+    if (!user.preferences) {
+      return upcomingEvents
+        .sort((a, b) => (b.likeCount || 0) - (a.likeCount || 0))
+        .slice(0, limit);
+    }
+    
+    // Extract user preferences
+    const userPreferences = user.preferences as any;
+    const preferredCategories = userPreferences.categories || [];
+    const preferredLocations = userPreferences.locations || [];
+    
+    // Get user's liked and saved events to understand their preferences
+    const likedEvents = await this.getLikedEvents(userId);
+    const savedEvents = await this.getSavedEvents(userId);
+    
+    // Get user's booking history
+    const bookings = Array.from(this.bookings.values())
+      .filter(booking => booking.userId === userId);
+    
+    // Get category IDs from user's previous interactions
+    const interactionCategoryIds = new Set<number>();
+    
+    // Add categories from liked events
+    likedEvents.forEach(event => {
+      if (event.categoryId) interactionCategoryIds.add(event.categoryId);
+    });
+    
+    // Add categories from saved events
+    savedEvents.forEach(event => {
+      if (event.categoryId) interactionCategoryIds.add(event.categoryId);
+    });
+    
+    // Add categories from booked events
+    bookings.forEach(booking => {
+      const event = this.events.get(booking.eventId);
+      if (event?.categoryId) interactionCategoryIds.add(event.categoryId);
+    });
+    
+    // Score each event based on user preferences and behavior
+    const scoredEvents = upcomingEvents.map(event => {
+      let score = 0;
+      
+      // Score based on explicit category preferences
+      if (preferredCategories.includes(event.categoryId)) {
+        score += 10;
+      }
+      
+      // Score based on categories from user interactions
+      if (event.categoryId && interactionCategoryIds.has(event.categoryId)) {
+        score += 8;
+      }
+      
+      // Score based on location preferences for physical events
+      if (!event.isVirtual && preferredLocations.length > 0) {
+        // If event has location data (lat/long)
+        if (event.latitude && event.longitude) {
+          if (preferredLocations.some(loc => 
+            // Simple check if location is "nearby" - in a real app, use proper distance calculation
+            loc.latitude === event.latitude.substring(0, 5) || 
+            loc.longitude === event.longitude.substring(0, 5)
+          )) {
+            score += 5;
+          }
+        }
+      }
+      
+      // Score based on general popularity
+      score += (event.likeCount || 0) * 0.5;
+      
+      // Score based on attendance
+      score += (event.attendeeCount || 0) * 0.3;
+      
+      // Virtual events get a slight boost if user has attended virtual events before
+      if (event.isVirtual && 
+          bookings.some(b => {
+            const bookedEvent = this.events.get(b.eventId);
+            return bookedEvent?.isVirtual;
+          })) {
+        score += 3;
+      }
+      
+      // Check if the event is from a followed organizer
+      const eventOrganizer = event.createdById;
+      if (eventOrganizer) {
+        const isFollowing = Array.from(this.followers.values())
+          .some(f => f.followerId === userId && f.followedId === eventOrganizer);
+        
+        if (isFollowing) {
+          score += 7;
+        }
+      }
+      
+      return { event, score };
+    });
+    
+    // Sort by score and return top events
+    return scoredEvents
+      .sort((a, b) => b.score - a.score)
+      .map(item => item.event)
+      .slice(0, limit);
   }
   
   // Post social interactions and deletion methods

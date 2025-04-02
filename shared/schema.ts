@@ -32,6 +32,8 @@ export const eventPlaces = pgTable("event_places", {
   name: text("name").notNull(),
   description: text("description"),
   address: text("address").notNull(),
+  latitude: text("latitude"), // Geographic coordinate for mapping
+  longitude: text("longitude"), // Geographic coordinate for mapping
   categoryId: integer("category_id").references(() => categories.id),
   businessId: integer("business_id").references(() => businessProfiles.id),
   capacity: integer("capacity").default(100),
@@ -60,6 +62,8 @@ export const events = pgTable("events", {
   endDate: timestamp("end_date"),
   placeId: integer("place_id").references(() => eventPlaces.id),
   address: text("address"),
+  latitude: text("latitude"), // Geographic coordinate for mapping
+  longitude: text("longitude"), // Geographic coordinate for mapping
   categoryId: integer("category_id").references(() => categories.id),
   createdById: integer("created_by_id").references(() => users.id),
   isPublic: boolean("is_public").default(true),

@@ -1467,6 +1467,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Internal server error" });
     }
   });
+  
+  // User preferences and recommendations
+  app.get("/api/user/preferences", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.status(200).json(user.preferences || {});
+    } catch (error) {
+      console.error("Error fetching user preferences:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.put("/api/user/preferences", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const preferences = req.body;
+      const updatedUser = await storage.updateUserPreferences(userId, preferences);
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.status(200).json(updatedUser.preferences || {});
+    } catch (error) {
+      console.error("Error updating user preferences:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.get("/api/events/recommended", ensureAuthenticated, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      // Parse limit from query parameters, default to 10
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 10;
+      
+      const recommendedEvents = await storage.getRecommendedEvents(userId, limit);
+      
+      res.status(200).json(recommendedEvents);
+    } catch (error) {
+      console.error("Error fetching recommended events:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
 
   // Payment integration for events with more than 300 attendees
   

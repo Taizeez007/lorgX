@@ -8,6 +8,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { PreferencesForm } from "@/components/profile/PreferencesForm";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -424,11 +425,12 @@ export default function ProfilePage() {
               {/* Profile Tabs */}
               <div className="bg-white rounded-xl shadow-sm p-4">
                 <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="grid grid-cols-2 md:grid-cols-4 mb-6">
+                  <TabsList className="grid grid-cols-2 md:grid-cols-5 mb-6">
                     <TabsTrigger value="posts">Posts</TabsTrigger>
                     <TabsTrigger value="events">Events</TabsTrigger>
                     <TabsTrigger value="connections">Connections</TabsTrigger>
                     <TabsTrigger value="network">Network</TabsTrigger>
+                    {isOwnProfile && <TabsTrigger value="preferences">Preferences</TabsTrigger>}
                   </TabsList>
                   
                   <TabsContent value="posts">
@@ -715,6 +717,18 @@ export default function ProfilePage() {
                       </Card>
                     </div>
                   </TabsContent>
+                  
+                  {isOwnProfile && (
+                    <TabsContent value="preferences">
+                      <div className="max-w-3xl mx-auto">
+                        <h3 className="text-xl font-semibold mb-4">Your Preferences</h3>
+                        <p className="text-gray-600 mb-6">
+                          Customize your experience by setting your preferences. This helps us recommend events and content that match your interests.
+                        </p>
+                        <PreferencesForm />
+                      </div>
+                    </TabsContent>
+                  )}
                 </Tabs>
               </div>
             </div>
