@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import Navbar from "@/components/layout/navbar";
 import Footer from "@/components/layout/footer";
@@ -24,7 +24,9 @@ import {
   Filter as FilterIcon,
   Loader2,
   CalendarDays,
-  Tag 
+  Tag,
+  WifiOff,
+  Download
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { 
@@ -34,6 +36,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { OfflineEventCard } from "@/components/events/OfflineEventCard";
+import { 
+  getCachedEvents,
+  cacheEvents, 
+  isOnline 
+} from "@/lib/offline-storage";
+import { useToast } from "@/hooks/use-toast";
 
 export default function EventsPage() {
   const [location] = useLocation();
