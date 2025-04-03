@@ -51,6 +51,11 @@ const placeSchema = z.object({
   businessId: z.coerce.number().optional(),
   latitude: z.string().optional(),
   longitude: z.string().optional(),
+  // Booking-related fields
+  bookingType: z.enum(['single', 'daily', 'subscription']).default('single'),
+  minimumBookingDays: z.coerce.number().min(1).default(1).optional(),
+  bookingRate: z.enum(['hourly', 'daily', 'weekly', 'monthly']).default('daily').optional(),
+  basePrice: z.coerce.number().min(0).default(0),
 });
 
 type PlaceFormValues = z.infer<typeof placeSchema>;
@@ -125,6 +130,10 @@ export default function CreatePlacePage() {
       amenities: [],
       purposeTags: [],
       imageUrls: [],
+      bookingType: 'single',
+      minimumBookingDays: 1,
+      bookingRate: 'daily',
+      basePrice: 0,
     },
   });
 
@@ -208,12 +217,28 @@ export default function CreatePlacePage() {
 
   // Form submission handler
   const onSubmit = (values: PlaceFormValues) => {
+    // Filter booking fields based on booking type
+    const { bookingType, bookingRate, minimumBookingDays, ...otherValues } = values;
+    
+    // Prepare booking related data
+    const bookingData = {
+      bookingType,
+      // Only include booking rate for subscription type
+      ...(bookingType === 'subscription' ? { bookingRate } : {}),
+      // Only include minimum booking days for daily type
+      ...(bookingType === 'daily' ? { minimumBookingDays } : {}),
+      // Always include base price
+      basePrice: values.basePrice
+    };
+    
     const placeData = { 
-      ...values,
+      ...otherValues,
+      ...bookingData,
       createdById: user?.id,
       // Add business ID if user is a business account and has selected one
       ...(user?.isBusinessAccount && values.businessId && { businessId: values.businessId })
     };
+    
     createPlaceMutation.mutate(placeData);
   };
 
@@ -602,6 +627,126 @@ export default function CreatePlacePage() {
                               </Badge>
                             ))}
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Booking Options */}
+                      <div className="border-t pt-6 mt-8">
+                        <h3 className="text-lg font-medium mb-4">Booking Settings</h3>
+                        <FormDescription className="mb-4">
+                          Configure how this place can be booked by users
+                        </FormDescription>
+
+                        <div className="space-y-6">
+                          <FormField
+                            control={form.control}
+                            name="bookingType"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Booking Type</FormLabel>
+                                <Select 
+                                  onValueChange={field.onChange} 
+                                  defaultValue={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select booking type" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="single">Single Event Booking</SelectItem>
+                                    <SelectItem value="daily">Daily/Specific Days (like a hotel)</SelectItem>
+                                    <SelectItem value="subscription">Subscription (like a gym)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <FormDescription>
+                                  Choose how users can book this place
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          {form.watch("bookingType") === "daily" && (
+                            <FormField
+                              control={form.control}
+                              name="minimumBookingDays"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Minimum Booking Days</FormLabel>
+                                  <FormControl>
+                                    <Input 
+                                      type="number" 
+                                      min="1"
+                                      {...field}
+                                      onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    Minimum number of days required for booking
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          )}
+
+                          {form.watch("bookingType") === "subscription" && (
+                            <FormField
+                              control={form.control}
+                              name="bookingRate"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Subscription Rate</FormLabel>
+                                  <Select 
+                                    onValueChange={field.onChange} 
+                                    defaultValue={field.value}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select rate" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      <SelectItem value="hourly">Hourly</SelectItem>
+                                      <SelectItem value="daily">Daily</SelectItem>
+                                      <SelectItem value="weekly">Weekly</SelectItem>
+                                      <SelectItem value="monthly">Monthly</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <FormDescription>
+                                    How often the subscription is billed
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          )}
+
+                          <FormField
+                            control={form.control}
+                            name="basePrice"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Base Price</FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    type="number" 
+                                    min="0"
+                                    placeholder="0.00"
+                                    {...field}
+                                    onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                                  />
+                                </FormControl>
+                                <FormDescription>
+                                  {form.watch("bookingType") === "single" && "Price for booking this place for a single event"}
+                                  {form.watch("bookingType") === "daily" && "Price per day for booking this place"}
+                                  {form.watch("bookingType") === "subscription" && `Price per ${form.watch("bookingRate") || 'period'} subscription period`}
+                                </FormDescription>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
                         </div>
                       </div>
                     </form>

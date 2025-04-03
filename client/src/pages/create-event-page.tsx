@@ -57,15 +57,6 @@ const eventSchema = z.object({
   isHybrid: z.boolean().default(false),
   isFree: z.boolean().default(true),
   price: z.string().optional(),
-  // Recurrence fields
-  isRecurring: z.boolean().default(false),
-  recurrenceType: z.enum(['daily', 'weekly', 'monthly', 'yearly', 'custom']).optional(),
-  recurrenceInterval: z.number().int().positive().optional(),
-  recurrenceDaysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
-  recurrenceDayOfMonth: z.number().int().positive().optional(),
-  recurrenceMonthOfYear: z.number().int().positive().optional(),
-  recurrenceEndDate: z.date().optional(),
-  recurrenceCount: z.number().int().positive().optional(),
 });
 
 type EventFormValues = z.infer<typeof eventSchema>;
@@ -97,15 +88,6 @@ export default function CreateEventPage() {
       isHybrid: false,
       isFree: true,
       price: "",
-      // Recurrence defaults
-      isRecurring: false,
-      recurrenceType: undefined,
-      recurrenceInterval: 1,
-      recurrenceDaysOfWeek: [],
-      recurrenceDayOfMonth: undefined,
-      recurrenceMonthOfYear: undefined,
-      recurrenceEndDate: undefined,
-      recurrenceCount: undefined,
     },
   });
   
@@ -113,8 +95,6 @@ export default function CreateEventPage() {
   const isVirtual = form.watch("isVirtual");
   const isHybrid = form.watch("isHybrid");
   const isFree = form.watch("isFree");
-  const isRecurring = form.watch("isRecurring");
-  const recurrenceType = form.watch("recurrenceType");
   
   // Create event mutation
   const createEventMutation = useMutation({
@@ -210,13 +190,15 @@ export default function CreateEventPage() {
                                     <div className="flex justify-center py-2">
                                       <Loader2 className="h-6 w-6 animate-spin text-primary" />
                                     </div>
-                                  ) : categories ? (
+                                  ) : categories && Array.isArray(categories) ? (
                                     categories.map((category: any) => (
                                       <SelectItem key={category.id} value={category.id.toString()}>
                                         {category.name}
                                       </SelectItem>
                                     ))
-                                  ) : null}
+                                  ) : (
+                                    <SelectItem value="no-categories">No categories available</SelectItem>
+                                  )}
                                 </SelectContent>
                               </Select>
                               <FormMessage />
@@ -500,247 +482,6 @@ export default function CreateEventPage() {
                               </FormItem>
                             )}
                           />
-                        )}
-                        
-                        <div className="col-span-2 mt-8 mb-4">
-                          <h3 className="text-lg font-medium border-b pb-2">Recurrence Settings</h3>
-                        </div>
-                        
-                        <FormField
-                          control={form.control}
-                          name="isRecurring"
-                          render={({ field }) => (
-                            <FormItem className="flex flex-row items-center justify-between space-x-3 space-y-0 rounded-md border p-4">
-                              <div className="space-y-0.5">
-                                <FormLabel>Recurring Event</FormLabel>
-                                <FormDescription>
-                                  Does this event repeat on a schedule?
-                                </FormDescription>
-                              </div>
-                              <FormControl>
-                                <Switch
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        
-                        {form.watch("isRecurring") && (
-                          <>
-                            <FormField
-                              control={form.control}
-                              name="recurrenceType"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Recurrence Pattern</FormLabel>
-                                  <Select
-                                    onValueChange={field.onChange}
-                                    defaultValue={field.value}
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Select how often the event repeats" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      <SelectItem value="daily">Daily</SelectItem>
-                                      <SelectItem value="weekly">Weekly</SelectItem>
-                                      <SelectItem value="monthly">Monthly</SelectItem>
-                                      <SelectItem value="yearly">Yearly</SelectItem>
-                                      <SelectItem value="custom">Custom</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            
-                            <FormField
-                              control={form.control}
-                              name="recurrenceInterval"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Repeat Every</FormLabel>
-                                  <div className="flex items-center space-x-2">
-                                    <FormControl>
-                                      <Input
-                                        type="number"
-                                        min={1}
-                                        {...field}
-                                        onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
-                                      />
-                                    </FormControl>
-                                    <span>
-                                      {form.watch("recurrenceType") === 'daily' && 'Day(s)'}
-                                      {form.watch("recurrenceType") === 'weekly' && 'Week(s)'}
-                                      {form.watch("recurrenceType") === 'monthly' && 'Month(s)'}
-                                      {form.watch("recurrenceType") === 'yearly' && 'Year(s)'}
-                                      {form.watch("recurrenceType") === 'custom' && 'Interval(s)'}
-                                    </span>
-                                  </div>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            
-                            {form.watch("recurrenceType") === 'weekly' && (
-                              <FormField
-                                control={form.control}
-                                name="recurrenceDaysOfWeek"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>On these days</FormLabel>
-                                    <div className="flex flex-wrap gap-2">
-                                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
-                                        <div key={day} className="flex items-center space-x-2">
-                                          <Checkbox
-                                            checked={field.value?.includes(index)}
-                                            onCheckedChange={(checked) => {
-                                              const currentValue = field.value || [];
-                                              if (checked) {
-                                                field.onChange([...currentValue, index]);
-                                              } else {
-                                                field.onChange(currentValue.filter((val) => val !== index));
-                                              }
-                                            }}
-                                          />
-                                          <span>{day}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-                            
-                            {form.watch("recurrenceType") === 'monthly' && (
-                              <FormField
-                                control={form.control}
-                                name="recurrenceDayOfMonth"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Day of month</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type="number"
-                                        min={1}
-                                        max={31}
-                                        {...field}
-                                        onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
-                                      />
-                                    </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-                            
-                            {form.watch("recurrenceType") === 'yearly' && (
-                              <FormField
-                                control={form.control}
-                                name="recurrenceMonthOfYear"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Month of year</FormLabel>
-                                    <Select
-                                      onValueChange={(value) => field.onChange(parseInt(value))}
-                                      value={field.value?.toString()}
-                                    >
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select month" />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        <SelectItem value="1">January</SelectItem>
-                                        <SelectItem value="2">February</SelectItem>
-                                        <SelectItem value="3">March</SelectItem>
-                                        <SelectItem value="4">April</SelectItem>
-                                        <SelectItem value="5">May</SelectItem>
-                                        <SelectItem value="6">June</SelectItem>
-                                        <SelectItem value="7">July</SelectItem>
-                                        <SelectItem value="8">August</SelectItem>
-                                        <SelectItem value="9">September</SelectItem>
-                                        <SelectItem value="10">October</SelectItem>
-                                        <SelectItem value="11">November</SelectItem>
-                                        <SelectItem value="12">December</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-                            
-                            <FormField
-                              control={form.control}
-                              name="recurrenceEndDate"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>End Date (Optional)</FormLabel>
-                                  <Popover>
-                                    <PopoverTrigger asChild>
-                                      <FormControl>
-                                        <Button
-                                          variant={"outline"}
-                                          className={cn(
-                                            "w-full pl-3 text-left font-normal",
-                                            !field.value && "text-muted-foreground"
-                                          )}
-                                        >
-                                          {field.value ? (
-                                            format(field.value, "PPP")
-                                          ) : (
-                                            <span>Pick a date</span>
-                                          )}
-                                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                                        </Button>
-                                      </FormControl>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-auto p-0" align="start">
-                                      <Calendar
-                                        mode="single"
-                                        selected={field.value}
-                                        onSelect={field.onChange}
-                                        initialFocus
-                                      />
-                                    </PopoverContent>
-                                  </Popover>
-                                  <FormDescription>
-                                    When the recurring events should stop. If not provided, specify a number of occurrences below.
-                                  </FormDescription>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            
-                            {!form.watch("recurrenceEndDate") && (
-                              <FormField
-                                control={form.control}
-                                name="recurrenceCount"
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormLabel>Number of Occurrences</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        type="number"
-                                        min={1}
-                                        {...field}
-                                        onChange={(e) => field.onChange(parseInt(e.target.value) || undefined)}
-                                      />
-                                    </FormControl>
-                                    <FormDescription>
-                                      How many times this event should repeat before stopping.
-                                    </FormDescription>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            )}
-                          </>
                         )}
                       </div>
                     </form>

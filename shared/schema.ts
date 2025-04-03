@@ -88,6 +88,12 @@ export const eventPlaces = pgTable("event_places", {
   purposeTags: jsonb("purpose_tags").default([]), // Array of tags for what purpose the place serves (meetings, weddings, etc)
   foods: jsonb("foods").default([]), // Array of food items with name and price
   drinks: jsonb("drinks").default([]), // Array of drink items with name and price
+  
+  // Booking related fields
+  bookingType: text("booking_type").default("single"), // single, daily, subscription
+  bookingRate: text("booking_rate"), // For subscription: hourly, daily, weekly, monthly
+  minimumBookingDays: integer("minimum_booking_days").default(1), // For daily booking type
+  basePrice: integer("base_price").default(0), // Base price for booking
   rating: integer("rating"),
   reviewCount: integer("review_count").default(0),
   visitCount: integer("visit_count").default(0), // How many people visited this place
@@ -397,7 +403,24 @@ export const insertUserSchema = createInsertSchema(users).omit({
   verifiedAt: true
 });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
-export const insertEventPlaceSchema = createInsertSchema(eventPlaces).omit({ id: true, isDeleted: true, deleteRequestedAt: true });
+export const insertEventPlaceSchema = createInsertSchema(eventPlaces).omit({ 
+  id: true, 
+  isDeleted: true, 
+  deleteRequestedAt: true,
+  visitCount: true,
+  bookingCount: true,
+  isTrending: true,
+  isHot: true,
+  saveCount: true,
+  createdAt: true,
+  updatedAt: true
+}).extend({
+  // Make booking fields properly validated
+  bookingType: z.enum(['single', 'daily', 'subscription']).default('single'),
+  bookingRate: z.enum(['hourly', 'daily', 'weekly', 'monthly']).optional(),
+  minimumBookingDays: z.number().int().min(1).default(1).optional(),
+  basePrice: z.number().min(0).default(0)
+});
 export const insertEducationHistorySchema = createInsertSchema(educationHistory).omit({ id: true, createdAt: true, isVerified: true });
 export const insertWorkHistorySchema = createInsertSchema(workHistory).omit({ id: true, createdAt: true, isVerified: true });
 export const insertEventSchema = createInsertSchema(events).omit({ 
