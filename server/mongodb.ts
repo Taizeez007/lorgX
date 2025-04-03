@@ -102,11 +102,12 @@ const commentSchema = new mongoose.Schema({
 
 const connectionSchema = new mongoose.Schema({
   requesterId: { type: Number, required: true },
-  receiverId: { type: Number, required: true },
+  addresseeId: { type: Number, required: true },
   status: { type: String, default: 'pending' },
+  connectionType: { type: String, default: 'friend' },
+  rejectionReason: { type: String, default: null },
   createdAt: { type: Date, default: Date.now },
-  acceptedAt: { type: Date, default: null },
-  category: { type: String, default: null }
+  updatedAt: { type: Date, default: null }
 });
 
 const followerSchema = new mongoose.Schema({

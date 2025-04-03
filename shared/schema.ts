@@ -38,9 +38,15 @@ export const users = pgTable("users", {
   password: text("password").notNull(),
   email: text("email").notNull().unique(),
   fullName: text("full_name").notNull(),
+  displayNamePreference: text("display_name_preference").default("fullName"), // Options: fullName, username
   bio: text("bio"),
   profileImage: text("profile_image"),
   occupation: text("occupation"), // Current occupation or student status
+  skills: text("skills").array(), // Professional skills
+  achievements: text("achievements").array(), // Notable achievements
+  interests: text("interests").array(), // Personal/professional interests
+  website: text("website"), // Personal or professional website
+  location: text("location"), // City, country or region
   preferences: jsonb("preferences"),
   isBusinessAccount: boolean("is_business_account").default(false),
   
@@ -177,14 +183,16 @@ export const comments = pgTable("comments", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Connections between users (friends, colleagues, network)
+// Connections between users (friends, family, colleagues, acquaintances, special)
 export const connections = pgTable("connections", {
   id: serial("id").primaryKey(),
   requesterId: integer("requester_id").references(() => users.id).notNull(),
   addresseeId: integer("addressee_id").references(() => users.id).notNull(),
   status: text("status").notNull().default("pending"), // pending, accepted, rejected
-  connectionType: text("connection_type").notNull(), // friend, colleague, network
+  connectionType: text("connection_type").notNull(), // friend, family, colleague, acquaintance, special
+  rejectionReason: text("rejection_reason"), // Optional reason when rejected
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at"),
 });
 
 // Followers (separate from connections)
@@ -401,6 +409,12 @@ export const insertUserSchema = createInsertSchema(users).omit({
   stripeSubscriptionId: true,
   isVerified: true,
   verifiedAt: true
+}).extend({
+  // For the skills, achievements, and interests arrays, default to empty arrays if not provided
+  skills: z.array(z.string()).optional().default([]),
+  achievements: z.array(z.string()).optional().default([]),
+  interests: z.array(z.string()).optional().default([]),
+  displayNamePreference: z.enum(['fullName', 'username']).default('fullName')
 });
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertEventPlaceSchema = createInsertSchema(eventPlaces).omit({ 
@@ -508,7 +522,15 @@ export const insertPostSchema = createInsertSchema(posts).omit({
   deleteRequestedAt: true 
 });
 export const insertCommentSchema = createInsertSchema(comments).omit({ id: true, createdAt: true });
-export const insertConnectionSchema = createInsertSchema(connections).omit({ id: true, createdAt: true, status: true });
+export const insertConnectionSchema = createInsertSchema(connections).omit({ 
+  id: true, 
+  createdAt: true, 
+  status: true, 
+  updatedAt: true,
+  rejectionReason: true 
+}).extend({
+  connectionType: z.enum(['friend', 'family', 'colleague', 'acquaintance', 'special']).default('friend')
+});
 export const insertFollowerSchema = createInsertSchema(followers).omit({ id: true, createdAt: true });
 export const insertCommunitySchema = createInsertSchema(communities).omit({ id: true, createdAt: true, memberCount: true });
 export const insertCommunityMemberSchema = createInsertSchema(communityMembers).omit({ id: true, joinedAt: true });

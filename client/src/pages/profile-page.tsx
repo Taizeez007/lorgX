@@ -19,6 +19,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { 
   CalendarDays, 
   User, 
@@ -28,6 +29,8 @@ import {
   Edit, 
   UserPlus,
   UserMinus,
+  Home,
+  Star,
   Mail,
   MapPin,
   Briefcase,
@@ -128,11 +131,26 @@ export default function ProfilePage() {
   const isFollowing = following?.some((follow: any) => follow.followedId === parseInt(userId || '0')) || false;
   
   // Connection status with the profile
-  const connectionStatus = connections?.find(
+  const connection = connections?.find(
     (conn: any) => 
       conn.requesterId === parseInt(userId || '0') || 
       conn.addresseeId === parseInt(userId || '0')
-  )?.status || null;
+  ) || null;
+  
+  const connectionStatus = connection?.status || null;
+  const connectionType = connection?.connectionType || null;
+  
+  // Get connection type label based on the connection type
+  const getConnectionTypeLabel = (type: string) => {
+    switch(type) {
+      case 'friend': return 'Friend';
+      case 'family': return 'Family';
+      case 'colleague': return 'Colleague';
+      case 'acquaintance': return 'Acquaintance';
+      case 'special': return 'Special';
+      default: return 'Connection';
+    }
+  };
   
   // Follow mutation
   const followMutation = useMutation({
@@ -183,10 +201,10 @@ export default function ProfilePage() {
   
   // Connect mutation
   const connectMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ connectionType = 'friend' }) => {
       const res = await apiRequest("POST", "/api/connections", {
         addresseeId: parseInt(userId || '0'),
-        type: 'friend'
+        connectionType
       });
       return await res.json();
     },
@@ -294,8 +312,21 @@ export default function ProfilePage() {
                     <div className="mt-2 sm:mt-0 flex-1">
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
                         <div>
-                          <h1 className="text-2xl font-bold text-gray-900">{profileData.fullName}</h1>
-                          <p className="text-gray-600">@{profileData.username}</p>
+                          <h1 className="text-2xl font-bold text-gray-900">
+                            {profileData.displayNamePreference === 'username' ? 
+                              '@' + profileData.username : 
+                              profileData.fullName}
+                          </h1>
+                          <p className="text-gray-600">
+                            {profileData.displayNamePreference === 'username' ? 
+                              profileData.fullName : 
+                              '@' + profileData.username}
+                          </p>
+                          {profileData.isVerified && (
+                            <Badge className="mt-1 bg-blue-100 text-blue-800 border-blue-200">
+                              Verified
+                            </Badge>
+                          )}
                         </div>
                         
                         <div className="mt-4 sm:mt-0 flex gap-2">
@@ -326,18 +357,69 @@ export default function ProfilePage() {
                                   Pending
                                 </Badge>
                               ) : (
-                                <Button 
-                                  className="bg-primary flex items-center gap-1"
-                                  onClick={() => connectMutation.mutate()}
-                                  disabled={connectMutation.isPending}
-                                >
-                                  {connectMutation.isPending ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <UserPlus className="h-4 w-4" />
-                                  )} 
-                                  Connect
-                                </Button>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button 
+                                      className="bg-primary flex items-center gap-1"
+                                      disabled={connectMutation.isPending}
+                                    >
+                                      {connectMutation.isPending ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <UserPlus className="h-4 w-4" />
+                                      )} 
+                                      Connect
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-56 p-0">
+                                    <div className="p-3 border-b">
+                                      <h4 className="font-medium">Connection Type</h4>
+                                      <p className="text-sm text-gray-500">How do you know this person?</p>
+                                    </div>
+                                    <div className="p-1">
+                                      <Button
+                                        variant="ghost"
+                                        className="w-full justify-start"
+                                        onClick={() => connectMutation.mutate({ connectionType: 'friend' })}
+                                      >
+                                        <Users className="mr-2 h-4 w-4" />
+                                        Friend
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        className="w-full justify-start"
+                                        onClick={() => connectMutation.mutate({ connectionType: 'family' })}
+                                      >
+                                        <Home className="mr-2 h-4 w-4" />
+                                        Family
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        className="w-full justify-start"
+                                        onClick={() => connectMutation.mutate({ connectionType: 'colleague' })}
+                                      >
+                                        <Briefcase className="mr-2 h-4 w-4" />
+                                        Colleague
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        className="w-full justify-start"
+                                        onClick={() => connectMutation.mutate({ connectionType: 'acquaintance' })}
+                                      >
+                                        <User className="mr-2 h-4 w-4" />
+                                        Acquaintance
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        className="w-full justify-start"
+                                        onClick={() => connectMutation.mutate({ connectionType: 'special' })}
+                                      >
+                                        <Star className="mr-2 h-4 w-4" />
+                                        Special
+                                      </Button>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
                               )}
                               
                               {isFollowing ? (
@@ -376,6 +458,48 @@ export default function ProfilePage() {
                       
                       {profileData.bio && (
                         <p className="mt-4 text-gray-700">{profileData.bio}</p>
+                      )}
+                      
+                      {/* Skills, Achievements, Interests */}
+                      {(profileData.skills?.length > 0 || 
+                        profileData.achievements?.length > 0 || 
+                        profileData.interests?.length > 0) && (
+                        <div className="mt-4 space-y-3">
+                          {profileData.skills?.length > 0 && (
+                            <div>
+                              <h3 className="text-sm font-medium text-gray-700 mb-1">Skills</h3>
+                              <div className="flex flex-wrap gap-1.5">
+                                {profileData.skills.map((skill: string, i: number) => (
+                                  <Badge key={i} variant="secondary">{skill}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {profileData.achievements?.length > 0 && (
+                            <div>
+                              <h3 className="text-sm font-medium text-gray-700 mb-1">Achievements</h3>
+                              <div className="flex flex-wrap gap-1.5">
+                                {profileData.achievements.map((achievement: string, i: number) => (
+                                  <Badge key={i} variant="outline" className="bg-amber-50 border-amber-200 text-amber-800">
+                                    {achievement}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {profileData.interests?.length > 0 && (
+                            <div>
+                              <h3 className="text-sm font-medium text-gray-700 mb-1">Interests</h3>
+                              <div className="flex flex-wrap gap-1.5">
+                                {profileData.interests.map((interest: string, i: number) => (
+                                  <Badge key={i} variant="outline">{interest}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
                       
                       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -610,8 +734,17 @@ export default function ProfilePage() {
                                   {connectionUser.bio || `${connectionUser.fullName} is a user on the platform`}
                                 </p>
                                 <div className="mt-2">
-                                  <Badge className="bg-primary/10 text-primary border-primary/20">
-                                    {connection.type || 'Connection'}
+                                  <Badge className={`${
+                                    connection.connectionType === 'friend' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                    connection.connectionType === 'family' ? 'bg-green-100 text-green-800 border-green-200' :
+                                    connection.connectionType === 'colleague' ? 'bg-purple-100 text-purple-800 border-purple-200' :
+                                    connection.connectionType === 'acquaintance' ? 'bg-orange-100 text-orange-800 border-orange-200' :
+                                    connection.connectionType === 'special' ? 'bg-pink-100 text-pink-800 border-pink-200' :
+                                    'bg-primary/10 text-primary border-primary/20'}`}
+                                  >
+                                    {connection.connectionType ? 
+                                      connection.connectionType.charAt(0).toUpperCase() + connection.connectionType.slice(1) 
+                                      : 'Connection'}
                                   </Badge>
                                 </div>
                               </CardContent>
