@@ -44,6 +44,14 @@ export interface IStorage {
   deleteUser(id: number): Promise<void>;
   updateUserPreferences(userId: number, preferences: any): Promise<User | undefined>;
   
+  // Subscription and profile completion methods
+  updateUserSubscription(userId: number, type: string, startDate: Date, endDate: Date): Promise<User | undefined>;
+  cancelUserSubscription(userId: number): Promise<User | undefined>;
+  updateUserVerificationStatus(userId: number, isVerified: boolean): Promise<User | undefined>;
+  updateProfileCompletionPercentage(userId: number, percentage: number): Promise<User | undefined>;
+  calculateProfileCompletionPercentage(userId: number): Promise<number>;
+  updateUserStripeInfo(userId: number, stripeCustomerId: string, stripeSubscriptionId: string): Promise<User | undefined>;
+  
   // User blocking methods
   blockUser(blockerId: number, blockedId: number, reason?: string): Promise<BlockedUser>;
   unblockUser(blockerId: number, blockedId: number): Promise<void>;
@@ -374,6 +382,143 @@ export class MemStorage implements IStorage {
     const updatedPreferences = { ...currentPreferences, ...preferences };
     
     const updatedUser = { ...existingUser, preferences: updatedPreferences };
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+  
+  // Subscription and profile completion methods
+  async updateUserSubscription(userId: number, type: string, startDate: Date, endDate: Date): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser = { 
+      ...user, 
+      subscriptionType: type,
+      subscriptionStartDate: startDate,
+      subscriptionEndDate: endDate
+    };
+    
+    // If upgrading to Pro or Premium, automatically verify the user
+    if (type === 'pro' || type === 'premium') {
+      updatedUser.isVerified = true;
+      updatedUser.verifiedAt = new Date();
+    }
+    
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+  
+  async cancelUserSubscription(userId: number): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser = { 
+      ...user, 
+      subscriptionType: 'free',
+      subscriptionEndDate: new Date() // End subscription immediately
+    };
+    
+    // If the user was verified due to subscription, remove verification
+    if (user.isVerified && (user.subscriptionType === 'pro' || user.subscriptionType === 'premium')) {
+      updatedUser.isVerified = false;
+      updatedUser.verifiedAt = null;
+    }
+    
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+  
+  async updateUserVerificationStatus(userId: number, isVerified: boolean): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser = { 
+      ...user, 
+      isVerified,
+      verifiedAt: isVerified ? new Date() : null
+    };
+    
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+  
+  async updateProfileCompletionPercentage(userId: number, percentage: number): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser = { 
+      ...user, 
+      profileCompletionPercentage: percentage
+    };
+    
+    this.users.set(userId, updatedUser);
+    return updatedUser;
+  }
+  
+  async calculateProfileCompletionPercentage(userId: number): Promise<number> {
+    const user = this.users.get(userId);
+    if (!user) return 0;
+    
+    // Basic user info gives 20% completion
+    let percentage = 20;
+    
+    // Additional fields each add 10% (max 80% more)
+    const additionalFields = [
+      user.bio,
+      user.profileImage,
+      user.occupation
+    ];
+    
+    // Count additional completed fields
+    additionalFields.forEach(field => {
+      if (field) percentage += 10;
+    });
+    
+    // Business account specific checks (additional 30%)
+    if (user.isBusinessAccount) {
+      const businessProfile = Array.from(this.businessProfiles.values())
+        .find(profile => profile.userId === userId);
+      
+      if (businessProfile) {
+        // Basic business info gives 10%
+        percentage += 10;
+        
+        // Additional business fields each add 10% (max 20% more)
+        const businessFields = [
+          businessProfile.logo,
+          businessProfile.website
+        ];
+        
+        businessFields.forEach(field => {
+          if (field) percentage += 10;
+        });
+      }
+    } else {
+      // Personal account specific checks for education & work history (additional 30%)
+      const educationHistory = Array.from(this.educationHistory.values())
+        .filter(edu => edu.userId === userId);
+        
+      const workHistory = Array.from(this.workHistory.values())
+        .filter(work => work.userId === userId);
+      
+      if (educationHistory.length > 0) percentage += 15;
+      if (workHistory.length > 0) percentage += 15;
+    }
+    
+    // Ensure percentage is capped at 100%
+    return Math.min(percentage, 100);
+  }
+  
+  async updateUserStripeInfo(userId: number, stripeCustomerId: string, stripeSubscriptionId: string): Promise<User | undefined> {
+    const user = this.users.get(userId);
+    if (!user) return undefined;
+    
+    const updatedUser = { 
+      ...user, 
+      stripeCustomerId,
+      stripeSubscriptionId
+    };
+    
     this.users.set(userId, updatedUser);
     return updatedUser;
   }

@@ -19,7 +19,8 @@ export default function PaymentProvider({
   onSuccess,
   onCancel
 }: PaymentProviderProps) {
-  const [activeTab, setActiveTab] = useState<string>('stripe');
+  // Default to Paystack since Stripe is disabled
+  const [activeTab, setActiveTab] = useState<string>('paystack');
 
   return (
     <Card className="w-full max-w-lg mx-auto">
@@ -28,7 +29,7 @@ export default function PaymentProvider({
       </CardHeader>
       <CardContent>
         <Tabs
-          defaultValue="stripe"
+          defaultValue="paystack"
           value={activeTab}
           onValueChange={setActiveTab}
           className="w-full"

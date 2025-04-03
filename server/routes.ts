@@ -3,7 +3,8 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { WebSocketServer, WebSocket } from "ws";
-import Stripe from "stripe";
+// Stripe import commented out for now
+// import Stripe from "stripe";
 import Paystack from "paystack";
 import { 
   InsertPost, 
@@ -26,6 +27,8 @@ import {
   InsertBlockedUser,
   InsertAdminUser,
   InsertUnblockRequest,
+  SubscriptionTypes,
+  SubscriptionLimits,
   insertPostSchema,
   insertEventSchema,
   insertPostLikeSchema,
@@ -59,11 +62,11 @@ const ensureAuthenticated = (req: Request, res: Response, next: Function) => {
 };
 
 // Initialize payment gateways with placeholder values - real values to be added later
-// Stripe configuration
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy_key_for_stripe';
-const stripe = new Stripe(STRIPE_SECRET_KEY, {
-  apiVersion: '2024-01-01',
-});
+// Stripe configuration - COMMENTED OUT FOR NOW
+// const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || 'sk_test_dummy_key_for_stripe';
+// const stripe = new Stripe(STRIPE_SECRET_KEY, {
+//   apiVersion: '2024-01-01',
+// });
 
 // Paystack configuration
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || 'sk_test_dummy_key_for_paystack';
@@ -1577,6 +1580,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Payment integration for events with more than 300 attendees
   
   // Stripe payment integration
+  // Stripe payment endpoint - COMMENTED OUT FOR NOW
+  /*
   app.post("/api/payments/stripe/create-payment-intent", ensureAuthenticated, async (req, res) => {
     try {
       const { amount, eventId, currency = "usd" } = req.body;
@@ -1613,8 +1618,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error processing payment" });
     }
   });
+  */
   
-  // Stripe webhook handler for payment confirmation
+  // Temporary endpoint for Stripe payments
+  app.post("/api/payments/stripe/create-payment-intent", ensureAuthenticated, async (req, res) => {
+    // Return a placeholder response since Stripe is disabled
+    res.status(503).json({ 
+      message: 'Stripe payments are currently disabled. Please use Paystack instead.',
+      alternatives: ['paystack']
+    });
+  });
+  
+  // Stripe webhook handler for payment confirmation - COMMENTED OUT FOR NOW
+  /*
   app.post("/api/payments/stripe/webhook", async (req, res) => {
     // In production, this should verify webhook signatures
     try {
@@ -1655,6 +1671,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error("Error handling Stripe webhook:", error);
       res.status(500).json({ message: "Error processing webhook" });
     }
+  });
+  */
+  
+  // Temporary endpoint for Stripe webhook
+  app.post("/api/payments/stripe/webhook", async (req, res) => {
+    // Acknowledge the webhook but take no action since Stripe is disabled
+    res.status(200).json({ received: true, message: 'Stripe payments are currently disabled' });
   });
   
   // Paystack payment integration for both logged-in users and guests
@@ -2414,6 +2437,197 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error deleting work history:', error);
       res.status(500).json({ error: 'Failed to delete work history' });
+    }
+  });
+
+  // Subscription Management API Routes
+  app.get("/api/subscription", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Return subscription details
+      const subscriptionData = {
+        type: user.subscriptionType || 'free',
+        startDate: user.subscriptionStartDate,
+        endDate: user.subscriptionEndDate,
+        isVerified: user.isVerified || false
+        // Stripe integration fields - commented out
+        // stripeCustomerId: user.stripeCustomerId,
+        // stripeSubscriptionId: user.stripeSubscriptionId
+      };
+      
+      res.json(subscriptionData);
+    } catch (error) {
+      console.error("Error fetching subscription:", error);
+      res.status(500).json({ error: 'Failed to fetch subscription details' });
+    }
+  });
+
+  app.post("/api/subscription", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const { type } = req.body;
+      
+      if (!type || !['free', 'pro', 'premium'].includes(type)) {
+        return res.status(400).json({ error: 'Invalid subscription type' });
+      }
+      
+      // Calculate subscription period (1 month from now)
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + 1);
+      
+      // Update user's subscription
+      const updatedUser = await storage.updateUserSubscription(req.user.id, type, startDate, endDate);
+      
+      if (!updatedUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Return updated subscription details
+      const subscriptionData = {
+        type: updatedUser.subscriptionType || 'free',
+        startDate: updatedUser.subscriptionStartDate,
+        endDate: updatedUser.subscriptionEndDate,
+        isVerified: updatedUser.isVerified || false
+      };
+      
+      res.json(subscriptionData);
+    } catch (error) {
+      console.error("Error updating subscription:", error);
+      res.status(500).json({ error: 'Failed to update subscription' });
+    }
+  });
+
+  app.delete("/api/subscription", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      // Cancel user's subscription
+      const updatedUser = await storage.cancelUserSubscription(req.user.id);
+      
+      if (!updatedUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      res.status(204).end();
+    } catch (error) {
+      console.error("Error canceling subscription:", error);
+      res.status(500).json({ error: 'Failed to cancel subscription' });
+    }
+  });
+
+  // Stripe integration for subscription management - COMMENTED OUT FOR NOW
+  /*
+  app.post("/api/create-checkout-session", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    // Check if STRIPE_SECRET_KEY is available
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(500).json({ error: 'Stripe API key not configured' });
+    }
+    
+    try {
+      const { priceId } = req.body;
+      
+      if (!priceId) {
+        return res.status(400).json({ error: 'Price ID is required' });
+      }
+      
+      const user = await storage.getUser(req.user.id);
+      
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      let customerId = user.stripeCustomerId;
+      
+      // If user doesn't have a Stripe customer ID, create one
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: user.fullName,
+          metadata: {
+            userId: user.id.toString()
+          }
+        });
+        
+        customerId = customer.id;
+        
+        // Update user with Stripe customer ID
+        await storage.updateUser(user.id, { stripeCustomerId: customerId });
+      }
+      
+      // Create checkout session
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        mode: 'subscription',
+        success_url: `${req.headers.origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${req.headers.origin}/subscription/cancel`,
+        metadata: {
+          userId: user.id.toString()
+        }
+      });
+      
+      res.json({ sessionId: session.id, url: session.url });
+    } catch (error) {
+      console.error("Error creating checkout session:", error);
+      res.status(500).json({ error: 'Failed to create checkout session' });
+    }
+  });
+  */
+  
+  // Temporary endpoint for subscription management without Stripe
+  app.post("/api/create-checkout-session", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    // Return a placeholder response since Stripe is disabled
+    res.status(503).json({ 
+      message: 'Stripe payments are currently disabled. Please use Paystack or manual subscription updates.',
+      alternatives: ['paystack', 'manual']
+    });
+  });
+
+  // Profile Completion Percentage API
+  app.get("/api/profile-completion", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      const percentage = await storage.calculateProfileCompletionPercentage(req.user.id);
+      
+      // Update user's profile completion percentage
+      await storage.updateProfileCompletionPercentage(req.user.id, percentage);
+      
+      res.json({ percentage });
+    } catch (error) {
+      console.error("Error calculating profile completion:", error);
+      res.status(500).json({ error: 'Failed to calculate profile completion' });
     }
   });
 

@@ -1,102 +1,11 @@
-import { useState, useEffect } from 'react';
-import { loadStripe } from '@stripe/stripe-js';
-import {
-  Elements,
-  PaymentElement,
-  useStripe,
-  useElements
-} from '@stripe/react-stripe-js';
-import { apiRequest } from '@/lib/queryClient';
+// This component is a placeholder for Stripe integration
+// Stripe functionality has been removed temporarily
+
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2 } from 'lucide-react';
-
-// Initialize Stripe.js with the publishable key
-// Using dummy key until real one is provided
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY || 'pk_test_dummy_key');
-
-interface PaymentFormProps {
-  onSuccess: () => void;
-  onCancel: () => void;
-}
-
-const PaymentForm = ({ onSuccess, onCancel }: PaymentFormProps) => {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [isLoading, setIsLoading] = useState(false);
-  const { toast } = useToast();
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-
-    if (!stripe || !elements) {
-      // Stripe.js hasn't loaded yet
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      const result = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/payment-success`,
-        },
-        redirect: 'if_required',
-      });
-
-      if (result.error) {
-        // Show error message
-        toast({
-          title: 'Payment failed',
-          description: result.error.message || 'An error occurred during payment',
-          variant: 'destructive',
-        });
-      } else {
-        // The payment succeeded
-        toast({
-          title: 'Payment successful',
-          description: 'Your booking has been confirmed',
-        });
-        onSuccess();
-      }
-    } catch (error) {
-      console.error('Payment error:', error);
-      toast({
-        title: 'Payment failed',
-        description: 'An unexpected error occurred during payment',
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6 min-w-[300px]">
-      <PaymentElement />
-      <div className="flex justify-between space-x-4">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          disabled={isLoading}
-          className="w-1/2"
-        >
-          Cancel
-        </Button>
-        <Button 
-          type="submit" 
-          disabled={!stripe || isLoading} 
-          className="w-1/2"
-        >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-          Pay Now
-        </Button>
-      </div>
-    </form>
-  );
-};
+import { Loader2, AlertCircle } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface StripeCheckoutProps {
   amount: number;
@@ -113,71 +22,70 @@ export default function StripeCheckout({
   onSuccess,
   onCancel
 }: StripeCheckoutProps) {
-  const [clientSecret, setClientSecret] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    const createPaymentIntent = async () => {
-      try {
-        setLoading(true);
-        const response = await apiRequest(
-          'POST', 
-          '/api/payments/stripe/create-payment-intent', 
-          { amount, eventId, currency }
-        );
-        
-        const data = await response.json();
-        
-        if (!response.ok) {
-          throw new Error(data.message || 'Failed to initialize payment');
-        }
-        
-        setClientSecret(data.clientSecret);
-      } catch (error) {
-        console.error('Payment intent error:', error);
-        setError('Failed to initialize payment. Please try again.');
-        toast({
-          title: 'Payment Error',
-          description: 'Could not initialize payment process',
-          variant: 'destructive',
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    createPaymentIntent();
-  }, [amount, eventId, currency, toast]);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-4 text-center">
-        <p className="text-red-500">{error}</p>
-        <Button onClick={onCancel} className="mt-4">
-          Go Back
-        </Button>
-      </div>
-    );
-  }
+  const handlePaymentAttempt = async () => {
+    setLoading(true);
+    
+    // Simulate payment processing
+    setTimeout(() => {
+      setLoading(false);
+      
+      toast({
+        title: "Stripe integration unavailable",
+        description: "Please use Paystack for payments at this time.",
+        variant: "destructive"
+      });
+      
+      onCancel();
+    }, 1500);
+  };
 
   return (
-    <div className="p-4">
-      <h2 className="text-xl font-semibold mb-4">Complete your payment</h2>
-      {clientSecret && (
-        <Elements stripe={stripePromise} options={{ clientSecret }}>
-          <PaymentForm onSuccess={onSuccess} onCancel={onCancel} />
-        </Elements>
-      )}
+    <div className="p-4 space-y-6">
+      <h2 className="text-xl font-semibold mb-4">Stripe Payment</h2>
+      
+      <Alert variant="destructive">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Stripe integration is currently disabled</AlertTitle>
+        <AlertDescription>
+          Please use Paystack for payments at this time. Stripe integration will be available in the future.
+        </AlertDescription>
+      </Alert>
+      
+      <div className="p-4 border rounded-lg bg-gray-50 dark:bg-gray-900">
+        <div className="space-y-4">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Amount:</span>
+            <span className="font-medium">{new Intl.NumberFormat('en-US', { style: 'currency', currency: currency }).format(amount/100)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Event ID:</span>
+            <span className="font-medium">{eventId}</span>
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex justify-between space-x-4 pt-4">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={loading}
+          className="w-1/2"
+        >
+          Cancel
+        </Button>
+        <Button 
+          onClick={handlePaymentAttempt}
+          disabled={loading}
+          className="w-1/2"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+          Try Payment
+        </Button>
+      </div>
     </div>
   );
 }

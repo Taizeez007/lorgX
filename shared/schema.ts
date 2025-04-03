@@ -2,6 +2,35 @@ import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizz
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+// Subscription type enum
+export const SubscriptionTypes = {
+  FREE: "free",
+  PRO: "pro",
+  PREMIUM: "premium"
+} as const;
+
+// Subscription limits and features based on type
+export const SubscriptionLimits = {
+  [SubscriptionTypes.FREE]: {
+    maxFreeTickets: 300,
+    maxPaidTickets: 0,
+    verified: false,
+    commission: 0.05, // 5% commission
+  },
+  [SubscriptionTypes.PRO]: {
+    maxFreeTickets: 1000,
+    maxPaidTickets: 300,
+    verified: true,
+    commission: 0.05, // 5% commission
+  },
+  [SubscriptionTypes.PREMIUM]: {
+    maxFreeTickets: 3000,
+    maxPaidTickets: 1000,
+    verified: true,
+    commission: 0.05, // 5% commission
+  }
+} as const;
+
 // Users table
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -14,6 +43,22 @@ export const users = pgTable("users", {
   occupation: text("occupation"), // Current occupation or student status
   preferences: jsonb("preferences"),
   isBusinessAccount: boolean("is_business_account").default(false),
+  
+  // Profile completion tracking
+  profileCompletionPercentage: integer("profile_completion_percentage").default(20), // Starts at 20% after basic registration
+  
+  // Subscription related fields
+  subscriptionType: text("subscription_type").default(SubscriptionTypes.FREE), // free, pro, premium
+  subscriptionStartDate: timestamp("subscription_start_date"),
+  subscriptionEndDate: timestamp("subscription_end_date"),
+  // Stripe integration fields - commented out for now
+  // stripeCustomerId: text("stripe_customer_id"), // For subscription management
+  // stripeSubscriptionId: text("stripe_subscription_id"), // For subscription management
+  
+  // Verification status
+  isVerified: boolean("is_verified").default(false),
+  verifiedAt: timestamp("verified_at"),
+  
   createdAt: timestamp("created_at").defaultNow(),
   isDeleted: boolean("is_deleted").default(false),
   deleteRequestedAt: timestamp("delete_requested_at"),
@@ -314,7 +359,20 @@ export const workHistory = pgTable("work_history", {
 });
 
 // Insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true, isDeleted: true, deleteRequestedAt: true });
+export const insertUserSchema = createInsertSchema(users).omit({ 
+  id: true, 
+  createdAt: true, 
+  isDeleted: true, 
+  deleteRequestedAt: true,
+  profileCompletionPercentage: true,
+  subscriptionType: true,
+  subscriptionStartDate: true,
+  subscriptionEndDate: true,
+  stripeCustomerId: true,
+  stripeSubscriptionId: true,
+  isVerified: true,
+  verifiedAt: true
+});
 export const insertCategorySchema = createInsertSchema(categories).omit({ id: true });
 export const insertEventPlaceSchema = createInsertSchema(eventPlaces).omit({ id: true, isDeleted: true, deleteRequestedAt: true });
 export const insertEducationHistorySchema = createInsertSchema(educationHistory).omit({ id: true, createdAt: true, isVerified: true });
@@ -342,43 +400,46 @@ export const insertFollowerSchema = createInsertSchema(followers).omit({ id: tru
 export const insertCommunitySchema = createInsertSchema(communities).omit({ id: true, createdAt: true, memberCount: true });
 export const insertCommunityMemberSchema = createInsertSchema(communityMembers).omit({ id: true, joinedAt: true });
 export const insertMessageSchema = createInsertSchema(messages).omit({ id: true, createdAt: true, isRead: true });
-// Create two booking schemas: one for logged in users and one for guests
-export const insertBookingSchema = createInsertSchema(bookings).omit({ 
-  id: true, 
-  createdAt: true,
-  // Make these optional to support both user and guest bookings
-  userId: true,
-  guestName: true,
-  guestEmail: true,
-  guestPhone: true
-}).superRefine((data, ctx) => {
-  // Validate that either userId is provided or guest information is provided
-  if (!data.userId && !data.isGuestBooking) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Either userId or guest booking information is required",
-      path: ["userId"]
-    });
-  }
-  
-  // If this is a guest booking, validate guest fields
-  if (data.isGuestBooking) {
-    if (!data.guestName) {
+// Create booking schema for both logged in users and guests
+export const insertBookingSchema = createInsertSchema(bookings)
+  .omit({ 
+    id: true, 
+    createdAt: true
+  })
+  .extend({
+    userId: z.number().optional(),
+    guestName: z.string().nullable().optional(),
+    guestEmail: z.string().nullable().optional(),
+    guestPhone: z.string().nullable().optional()
+  })
+  .superRefine((data, ctx) => {
+    // Validate that either userId is provided or guest information is provided
+    if (!data.userId && !data.isGuestBooking) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Guest name is required for guest bookings",
-        path: ["guestName"]
+        message: "Either userId or guest booking information is required",
+        path: ["userId"]
       });
     }
-    if (!data.guestEmail) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Guest email is required for guest bookings",
-        path: ["guestEmail"]
-      });
+    
+    // If this is a guest booking, validate guest fields
+    if (data.isGuestBooking) {
+      if (!data.guestName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Guest name is required for guest bookings",
+          path: ["guestName"]
+        });
+      }
+      if (!data.guestEmail) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Guest email is required for guest bookings",
+          path: ["guestEmail"]
+        });
+      }
     }
-  }
-});
+  });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true, isRead: true });
 export const insertBusinessProfileSchema = createInsertSchema(businessProfiles).omit({ id: true, verified: true });
 export const insertBusinessEditorSchema = createInsertSchema(businessEditors).omit({ id: true, addedAt: true });
