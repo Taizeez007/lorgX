@@ -80,6 +80,10 @@ export interface IStorage {
   getEventPlaces(): Promise<EventPlace[]>;
   getEventPlaceById(id: number): Promise<EventPlace | undefined>;
   getEventPlacesByCategory(categoryId: number): Promise<EventPlace[]>;
+  getTrendingEventPlaces(): Promise<EventPlace[]>;
+  getHotEventPlaces(): Promise<EventPlace[]>;
+  incrementEventPlaceVisitCount(id: number): Promise<EventPlace | undefined>;
+  incrementEventPlaceBookingCount(id: number): Promise<EventPlace | undefined>;
   createEventPlace(place: InsertEventPlace): Promise<EventPlace>;
   requestDeleteEventPlace(id: number): Promise<EventPlace | undefined>;
   cancelDeleteEventPlace(id: number): Promise<EventPlace | undefined>;
@@ -553,9 +557,67 @@ export class MemStorage implements IStorage {
       .filter(place => place.categoryId === categoryId);
   }
   
+  async getTrendingEventPlaces(): Promise<EventPlace[]> {
+    return Array.from(this.eventPlaces.values())
+      .filter(place => place.isTrending && !place.isDeleted)
+      .sort((a, b) => (b.visitCount || 0) - (a.visitCount || 0));
+  }
+  
+  async getHotEventPlaces(): Promise<EventPlace[]> {
+    return Array.from(this.eventPlaces.values())
+      .filter(place => place.isHot && !place.isDeleted)
+      .sort((a, b) => (b.bookingCount || 0) - (a.bookingCount || 0));
+  }
+  
+  async incrementEventPlaceVisitCount(id: number): Promise<EventPlace | undefined> {
+    const place = this.eventPlaces.get(id);
+    if (!place) return undefined;
+    
+    const updatedPlace = { 
+      ...place, 
+      visitCount: (place.visitCount || 0) + 1 
+    };
+    
+    // If visit count is high, mark as trending
+    if (updatedPlace.visitCount > 50) {
+      updatedPlace.isTrending = true;
+    }
+    
+    this.eventPlaces.set(id, updatedPlace);
+    return updatedPlace;
+  }
+  
+  async incrementEventPlaceBookingCount(id: number): Promise<EventPlace | undefined> {
+    const place = this.eventPlaces.get(id);
+    if (!place) return undefined;
+    
+    const updatedPlace = { 
+      ...place, 
+      bookingCount: (place.bookingCount || 0) + 1 
+    };
+    
+    // If booking count is high, mark as hot
+    if (updatedPlace.bookingCount > 20) {
+      updatedPlace.isHot = true;
+    }
+    
+    this.eventPlaces.set(id, updatedPlace);
+    return updatedPlace;
+  }
+  
   async createEventPlace(place: InsertEventPlace): Promise<EventPlace> {
     const id = this.currentEventPlaceId++;
-    const newPlace: EventPlace = { ...place, id };
+    const newPlace: EventPlace = { 
+      ...place, 
+      id,
+      createdAt: new Date(),
+      visitCount: 0,
+      bookingCount: 0,
+      isTrending: false,
+      isHot: false,
+      reviewCount: 0,
+      saveCount: 0
+    };
     this.eventPlaces.set(id, newPlace);
     return newPlace;
   }

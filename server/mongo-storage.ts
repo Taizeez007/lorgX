@@ -185,6 +185,54 @@ export class MongoStorage implements IStorage {
     return this.documentsToEntities<EventPlace>(places);
   }
 
+  async getTrendingEventPlaces(): Promise<EventPlace[]> {
+    const places = await EventPlaceModel.find({ 
+      isTrending: true, 
+      isDeleted: { $ne: true } 
+    }).sort({ visitCount: -1 });
+    return this.documentsToEntities<EventPlace>(places);
+  }
+
+  async getHotEventPlaces(): Promise<EventPlace[]> {
+    const places = await EventPlaceModel.find({ 
+      isHot: true, 
+      isDeleted: { $ne: true } 
+    }).sort({ bookingCount: -1 });
+    return this.documentsToEntities<EventPlace>(places);
+  }
+
+  async incrementEventPlaceVisitCount(id: number): Promise<EventPlace | undefined> {
+    const place = await EventPlaceModel.findOne({ id, isDeleted: { $ne: true } });
+    if (!place) return undefined;
+    
+    // Increment visit count
+    place.visitCount = (place.visitCount || 0) + 1;
+    
+    // If visit count is high, mark as trending
+    if (place.visitCount > 50) {
+      place.isTrending = true;
+    }
+    
+    await place.save();
+    return this.documentToEntity<EventPlace>(place);
+  }
+
+  async incrementEventPlaceBookingCount(id: number): Promise<EventPlace | undefined> {
+    const place = await EventPlaceModel.findOne({ id, isDeleted: { $ne: true } });
+    if (!place) return undefined;
+    
+    // Increment booking count
+    place.bookingCount = (place.bookingCount || 0) + 1;
+    
+    // If booking count is high, mark as hot
+    if (place.bookingCount > 20) {
+      place.isHot = true;
+    }
+    
+    await place.save();
+    return this.documentToEntity<EventPlace>(place);
+  }
+
   async createEventPlace(place: InsertEventPlace): Promise<EventPlace> {
     const lastPlace = await EventPlaceModel.findOne().sort({ id: -1 });
     const id = lastPlace ? lastPlace.id + 1 : 1;

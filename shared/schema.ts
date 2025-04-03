@@ -85,11 +85,17 @@ export const eventPlaces = pgTable("event_places", {
   imageUrls: jsonb("image_urls").default([]), // Array of image URLs for the venue
   tags: jsonb("tags").default([]), // Array of tags for what the place can be used for
   amenities: jsonb("amenities").default([]), // Array of amenities like 'wifi', 'parking', 'wheelchair_accessible', etc.
+  purposeTags: jsonb("purpose_tags").default([]), // Array of tags for what purpose the place serves (meetings, weddings, etc)
   foods: jsonb("foods").default([]), // Array of food items with name and price
   drinks: jsonb("drinks").default([]), // Array of drink items with name and price
   rating: integer("rating"),
   reviewCount: integer("review_count").default(0),
+  visitCount: integer("visit_count").default(0), // How many people visited this place
+  bookingCount: integer("booking_count").default(0), // How many bookings were made
+  isTrending: boolean("is_trending").default(false), // Whether this place is trending
+  isHot: boolean("is_hot").default(false), // Whether this place is hot/popular
   placeType: text("place_type"),
+  saveCount: integer("save_count").default(0), // How many users saved this place
   createdById: integer("created_by_id").references(() => users.id),
   isDeleted: boolean("is_deleted").default(false),
   deleteRequestedAt: timestamp("delete_requested_at"),
@@ -102,7 +108,8 @@ export const events = pgTable("events", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   description: text("description"),
-  imageUrl: text("image_url"),
+  imageUrls: jsonb("image_urls").default([]), // Multiple images for the event
+  imageUrl: text("image_url"), // Main event image (keeping for backward compatibility)
   startDate: timestamp("start_date").notNull(),
   endDate: timestamp("end_date"),
   placeId: integer("place_id").references(() => eventPlaces.id),
@@ -110,6 +117,8 @@ export const events = pgTable("events", {
   latitude: text("latitude"), // Geographic coordinate for mapping
   longitude: text("longitude"), // Geographic coordinate for mapping
   categoryId: integer("category_id").references(() => categories.id),
+  tags: jsonb("tags").default([]), // Array of tags for the event
+  purposeTags: jsonb("purpose_tags").default([]), // Purpose of the event (meeting, conference, etc.)
   createdById: integer("created_by_id").references(() => users.id),
   isPublic: boolean("is_public").default(true),
   isVirtual: boolean("is_virtual").default(false),
@@ -117,12 +126,26 @@ export const events = pgTable("events", {
   isFree: boolean("is_free").default(true),
   price: text("price"),
   isLive: boolean("is_live").default(false),
+  isTrending: boolean("is_trending").default(false), // Whether this event is trending
+  isHot: boolean("is_hot").default(false), // Whether this event is hot/popular
+  viewCount: integer("view_count").default(0), // How many times this event was viewed
   attendeeCount: integer("attendee_count").default(0),
   maxAttendees: integer("max_attendees").default(300), // 300 for free events by default
+  isRecurring: boolean("is_recurring").default(false), // Whether this event recurs
+  recurrenceType: text("recurrence_type"), // daily, weekly, monthly, custom
+  recurrenceInterval: integer("recurrence_interval"), // Every X days/weeks/months
+  recurrenceDaysOfWeek: jsonb("recurrence_days_of_week").default([]), // For weekly: [0,1,2,3,4,5,6] (Sunday to Saturday)
+  recurrenceDayOfMonth: integer("recurrence_day_of_month"), // For monthly by day (1-31)
+  recurrenceMonthOfYear: integer("recurrence_month_of_year"), // For yearly (1-12)
+  recurrenceEndDate: timestamp("recurrence_end_date"), // When the recurring events should stop
+  recurrenceCount: integer("recurrence_count"), // Alternative to end date: after X occurrences
+  parentEventId: integer("parent_event_id").references(() => events.id), // For recurring event instances
   isDeleted: boolean("is_deleted").default(false),
   deleteRequestedAt: timestamp("delete_requested_at"),
   likeCount: integer("like_count").default(0),
   saveCount: integer("save_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 // Posts (similar to Instagram posts)
@@ -383,7 +406,74 @@ export const insertEventSchema = createInsertSchema(events).omit({
   isDeleted: true, 
   deleteRequestedAt: true, 
   likeCount: true, 
-  saveCount: true 
+  saveCount: true,
+  viewCount: true,
+  isTrending: true,
+  isHot: true
+}).extend({
+  // Make recurrence fields optional with proper validation
+  isRecurring: z.boolean().optional().default(false),
+  recurrenceType: z.enum(['daily', 'weekly', 'monthly', 'yearly', 'custom']).optional(),
+  recurrenceInterval: z.number().int().positive().optional(),
+  recurrenceDaysOfWeek: z.array(z.number().int().min(0).max(6)).optional(),
+  recurrenceDayOfMonth: z.number().int().min(1).max(31).optional(),
+  recurrenceMonthOfYear: z.number().int().min(1).max(12).optional(),
+  recurrenceEndDate: z.date().optional(),
+  recurrenceCount: z.number().int().positive().optional(),
+  parentEventId: z.number().optional()
+}).superRefine((data, ctx) => {
+  // Validate recurrence fields when isRecurring is true
+  if (data.isRecurring) {
+    if (!data.recurrenceType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Recurrence type is required for recurring events",
+        path: ["recurrenceType"]
+      });
+    }
+    
+    if (!data.recurrenceInterval) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Recurrence interval is required for recurring events",
+        path: ["recurrenceInterval"]
+      });
+    }
+    
+    // Validate specific fields based on recurrence type
+    if (data.recurrenceType === 'weekly' && (!data.recurrenceDaysOfWeek || data.recurrenceDaysOfWeek.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "At least one day of the week must be selected for weekly recurring events",
+        path: ["recurrenceDaysOfWeek"]
+      });
+    }
+    
+    if (data.recurrenceType === 'monthly' && !data.recurrenceDayOfMonth) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Day of month is required for monthly recurring events",
+        path: ["recurrenceDayOfMonth"]
+      });
+    }
+    
+    if (data.recurrenceType === 'yearly' && !data.recurrenceMonthOfYear) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Month of year is required for yearly recurring events",
+        path: ["recurrenceMonthOfYear"]
+      });
+    }
+    
+    // Require either an end date or a count
+    if (!data.recurrenceEndDate && !data.recurrenceCount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Either an end date or a number of occurrences is required for recurring events",
+        path: ["recurrenceEndDate"]
+      });
+    }
+  }
 });
 export const insertPostSchema = createInsertSchema(posts).omit({ 
   id: true, 

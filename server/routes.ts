@@ -124,6 +124,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/places/trending", async (req, res) => {
+    try {
+      const places = await storage.getTrendingEventPlaces();
+      res.json(places);
+    } catch (error) {
+      console.error("Error fetching trending places:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get("/api/places/hot", async (req, res) => {
+    try {
+      const places = await storage.getHotEventPlaces();
+      res.json(places);
+    } catch (error) {
+      console.error("Error fetching hot places:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
+  app.post("/api/places/visit/:id", async (req, res) => {
+    try {
+      const placeId = parseInt(req.params.id);
+      const place = await storage.incrementEventPlaceVisitCount(placeId);
+      if (!place) {
+        return res.status(404).json({ message: "Place not found" });
+      }
+      res.json(place);
+    } catch (error) {
+      console.error("Error incrementing visit count:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+  
   app.post("/api/places", ensureAuthenticated, async (req, res) => {
     try {
       const placeData = insertEventPlaceSchema.parse(req.body);
@@ -713,6 +747,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const booking = await storage.createBooking(newBooking);
+      
+      // If the event has a placeId, increment the booking count
+      const event = await storage.getEventById(booking.eventId);
+      if (event && event.placeId) {
+        await storage.incrementEventPlaceBookingCount(event.placeId);
+      }
+      
       res.status(201).json(booking);
     } catch (error) {
       handleZodError(error, res);
@@ -1783,7 +1824,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         // Create booking after successful payment
-        await storage.createBooking(bookingData);
+        const booking = await storage.createBooking(bookingData);
+        
+        // If the event has a placeId, increment the booking count
+        const event = await storage.getEventById(eventId);
+        if (event && event.placeId) {
+          await storage.incrementEventPlaceBookingCount(event.placeId);
+        }
         
         res.status(200).json({ status: 'success', data: response.data });
       } else {
@@ -1863,6 +1910,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ 
           message: "This endpoint is for free events only. For paid events, use the payment endpoints." 
         });
+      }
+      
+      // If the event has a placeId, increment the booking count
+      if (event.placeId) {
+        await storage.incrementEventPlaceBookingCount(event.placeId);
       }
       
       // Create the booking data object
