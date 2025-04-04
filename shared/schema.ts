@@ -128,7 +128,8 @@ export const events = pgTable("events", {
   address: text("address"),
   latitude: text("latitude"), // Geographic coordinate for mapping
   longitude: text("longitude"), // Geographic coordinate for mapping
-  categoryId: integer("category_id").references(() => categories.id),
+  categoryId: integer("category_id").references(() => categories.id), // Primary category (for backward compatibility)
+  categoryIds: jsonb("category_ids").default([]), // Multiple categories (up to 3)
   tags: jsonb("tags").default([]), // Array of tags for the event
   purposeTags: jsonb("purpose_tags").default([]), // Purpose of the event (meeting, conference, etc.)
   createdById: integer("created_by_id").references(() => users.id),
@@ -448,6 +449,7 @@ export const insertEventSchema = createInsertSchema(events).omit({
   isTrending: true,
   isHot: true
 }).extend({
+  categoryIds: z.array(z.number()).min(1, "At least one category is required").max(3, "Maximum of 3 categories allowed").optional(),
   // Make recurrence fields optional with proper validation
   isRecurring: z.boolean().optional().default(false),
   recurrenceType: z.enum(['daily', 'weekly', 'monthly', 'yearly', 'custom']).optional(),

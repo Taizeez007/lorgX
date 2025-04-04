@@ -51,7 +51,7 @@ const eventSchema = z.object({
   startDate: z.date(),
   endDate: z.date().optional(),
   address: z.string().min(5, "Address must be at least 5 characters"),
-  categoryId: z.string().min(1, "Please select a category"),
+  categoryIds: z.array(z.string()).min(1, "Please select at least one category").max(3, "You can select up to 3 categories"),
   isPublic: z.boolean().default(true),
   isVirtual: z.boolean().default(false),
   isHybrid: z.boolean().default(false),
@@ -82,7 +82,7 @@ export default function CreateEventPage() {
       startDate: new Date(),
       endDate: undefined,
       address: "",
-      categoryId: "",
+      categoryIds: [],
       isPublic: true,
       isVirtual: false,
       isHybrid: false,
@@ -99,10 +99,12 @@ export default function CreateEventPage() {
   // Create event mutation
   const createEventMutation = useMutation({
     mutationFn: async (eventData: EventFormValues) => {
-      // Convert categoryId from string to number
+      // Convert categoryIds from strings to numbers
       const formattedData = {
         ...eventData,
-        categoryId: parseInt(eventData.categoryId),
+        categoryIds: eventData.categoryIds.map(id => parseInt(id)),
+        // Keep primary category for backward compatibility
+        categoryId: parseInt(eventData.categoryIds[0]),
       };
       
       const res = await apiRequest("POST", "/api/events", formattedData);
@@ -172,35 +174,55 @@ export default function CreateEventPage() {
                         
                         <FormField
                           control={form.control}
-                          name="categoryId"
+                          name="categoryIds"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Category</FormLabel>
-                              <Select 
-                                onValueChange={field.onChange} 
-                                defaultValue={field.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select a category" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {isCategoriesLoading ? (
-                                    <div className="flex justify-center py-2">
-                                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                    </div>
-                                  ) : categories && Array.isArray(categories) ? (
-                                    categories.map((category: any) => (
-                                      <SelectItem key={category.id} value={category.id.toString()}>
-                                        {category.name}
-                                      </SelectItem>
-                                    ))
-                                  ) : (
-                                    <SelectItem value="no-categories">No categories available</SelectItem>
-                                  )}
-                                </SelectContent>
-                              </Select>
+                              <FormLabel>Categories (Select up to 3)</FormLabel>
+                              <div className="space-y-2">
+                                {isCategoriesLoading ? (
+                                  <div className="flex justify-center py-2">
+                                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                                  </div>
+                                ) : categories && Array.isArray(categories) ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {categories.map((category: any) => {
+                                      const isSelected = field.value.includes(category.id.toString());
+                                      return (
+                                        <div 
+                                          key={category.id}
+                                          className={cn(
+                                            "px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors",
+                                            isSelected 
+                                              ? "bg-primary text-primary-foreground" 
+                                              : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                          )}
+                                          onClick={() => {
+                                            if (isSelected) {
+                                              field.onChange(field.value.filter((id: string) => id !== category.id.toString()));
+                                            } else if (field.value.length < 3) {
+                                              field.onChange([...field.value, category.id.toString()]);
+                                            } else {
+                                              // Show toast if trying to select more than 3
+                                              toast({
+                                                title: "Maximum categories reached",
+                                                description: "You can select up to 3 categories",
+                                                variant: "destructive"
+                                              });
+                                            }
+                                          }}
+                                        >
+                                          {category.name}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="text-muted-foreground">No categories available</div>
+                                )}
+                              </div>
+                              <FormDescription>
+                                Click to select/deselect categories. Select at least 1 and at most 3 categories.
+                              </FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}

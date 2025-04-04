@@ -47,7 +47,7 @@ const placeSchema = z.object({
   placeType: z.string().min(1, "Please enter a place type"),
   imageUrls: z.array(z.string()).min(1, "At least one image is required"),
   amenities: z.array(z.string()).optional(),
-  purposeTags: z.array(z.string()).optional(),
+  purposeTags: z.array(z.string()).min(1, "At least one purpose tag is required").max(3, "You can select at most 3 purpose tags"),
   businessId: z.coerce.number().optional(),
   latitude: z.string().optional(),
   longitude: z.string().optional(),
@@ -93,7 +93,6 @@ const commonPurposeTags = [
   "Social Gatherings",
   "Sport Events",
   "Product Launches",
-  "Private Events",
   "Retreats",
   "Team Building"
 ];
@@ -172,7 +171,7 @@ export default function CreatePlacePage() {
 
   // Add purpose tag to the list
   const handleAddPurposeTag = (tag: string) => {
-    if (tag && !selectedPurposeTags.includes(tag)) {
+    if (tag && !selectedPurposeTags.includes(tag) && selectedPurposeTags.length < 3) {
       const newTags = [...selectedPurposeTags, tag];
       setSelectedPurposeTags(newTags);
       form.setValue("purposeTags", newTags);
@@ -219,7 +218,7 @@ export default function CreatePlacePage() {
   const onSubmit = (values: PlaceFormValues) => {
     // Filter booking fields based on booking type
     const { bookingType, bookingRate, minimumBookingDays, ...otherValues } = values;
-    
+
     // Prepare booking related data
     const bookingData = {
       bookingType,
@@ -230,7 +229,7 @@ export default function CreatePlacePage() {
       // Always include base price
       basePrice: values.basePrice
     };
-    
+
     const placeData = { 
       ...otherValues,
       ...bookingData,
@@ -238,7 +237,7 @@ export default function CreatePlacePage() {
       // Add business ID if user is a business account and has selected one
       ...(user?.isBusinessAccount && values.businessId && { businessId: values.businessId })
     };
-    
+
     createPlaceMutation.mutate(placeData);
   };
 
@@ -250,13 +249,13 @@ export default function CreatePlacePage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navbar />
-      
+
       <div className="container mx-auto px-4 py-8">
         <div className="flex flex-col md:flex-row gap-6">
           <div className="w-full md:w-1/4 lg:w-1/5">
             <SidebarLeft />
           </div>
-          
+
           <div className="w-full md:w-3/4 lg:w-4/5">
             <div className="max-w-4xl mx-auto">
               <Card>
@@ -266,7 +265,7 @@ export default function CreatePlacePage() {
                     Create a place for hosting events. Businesses can create multiple places to offer for events.
                   </CardDescription>
                 </CardHeader>
-                
+
                 <CardContent>
                   <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
@@ -283,7 +282,7 @@ export default function CreatePlacePage() {
                           </FormItem>
                         )}
                       />
-                      
+
                       <FormField
                         control={form.control}
                         name="description"
@@ -301,7 +300,7 @@ export default function CreatePlacePage() {
                           </FormItem>
                         )}
                       />
-                      
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <FormField
                           control={form.control}
@@ -337,7 +336,7 @@ export default function CreatePlacePage() {
                             </FormItem>
                           )}
                         />
-                        
+
                         <FormField
                           control={form.control}
                           name="placeType"
@@ -352,7 +351,7 @@ export default function CreatePlacePage() {
                           )}
                         />
                       </div>
-                      
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <FormField
                           control={form.control}
@@ -372,7 +371,7 @@ export default function CreatePlacePage() {
                             </FormItem>
                           )}
                         />
-                        
+
                         <FormField
                           control={form.control}
                           name="capacity"
@@ -392,7 +391,7 @@ export default function CreatePlacePage() {
                           )}
                         />
                       </div>
-                      
+
                       {user.isBusinessAccount && Array.isArray(businessProfiles) && businessProfiles.length > 0 && (
                         <FormField
                           control={form.control}
@@ -428,7 +427,7 @@ export default function CreatePlacePage() {
                           )}
                         />
                       )}
-                      
+
                       {/* Image URLs */}
                       <div>
                         <FormLabel className="block mb-2">Images</FormLabel>
@@ -502,7 +501,7 @@ export default function CreatePlacePage() {
                           </p>
                         )}
                       </div>
-                      
+
                       {/* Amenities */}
                       <div>
                         <FormLabel className="block mb-2">Amenities</FormLabel>
@@ -564,12 +563,12 @@ export default function CreatePlacePage() {
                           </div>
                         </div>
                       </div>
-                      
+
                       {/* Purpose Tags */}
                       <div>
                         <FormLabel className="block mb-2">Purpose Tags</FormLabel>
                         <FormDescription className="mb-2">
-                          Select what purposes this place is suitable for
+                          Select up to 3 tags that best describe your event place.
                         </FormDescription>
                         <div className="flex flex-wrap gap-2 mb-2">
                           {selectedPurposeTags.map((tag, index) => (
@@ -752,7 +751,7 @@ export default function CreatePlacePage() {
                     </form>
                   </Form>
                 </CardContent>
-                
+
                 <CardFooter className="flex justify-between">
                   <Button variant="outline" onClick={() => navigate("/events?filter=places")}>
                     Cancel
@@ -776,7 +775,7 @@ export default function CreatePlacePage() {
           </div>
         </div>
       </div>
-      
+
       <Footer />
     </div>
   );
