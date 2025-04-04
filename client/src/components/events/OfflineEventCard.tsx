@@ -19,7 +19,7 @@ interface OfflineEventCardProps {
   showSaveButton?: boolean;
 }
 
-export function OfflineEventCard({ event, isOffline = false, showSaveButton = false }: OfflineEventCardProps) {
+export function OfflineEventCard({ event, isOffline = false, showSaveButton = true }: OfflineEventCardProps) {
   return (
     <Card className="h-full flex flex-col overflow-hidden group hover:shadow-md transition-shadow">
       <div className="relative">
@@ -32,7 +32,7 @@ export function OfflineEventCard({ event, isOffline = false, showSaveButton = fa
             Offline
           </Badge>
         )}
-        
+
         {showSaveButton && (
           <div className="absolute top-2 right-2 z-10">
             <SaveButton 
@@ -43,7 +43,7 @@ export function OfflineEventCard({ event, isOffline = false, showSaveButton = fa
             />
           </div>
         )}
-        
+
         {event.imageUrl ? (
           <div className="aspect-video w-full overflow-hidden">
             <img 
@@ -58,7 +58,7 @@ export function OfflineEventCard({ event, isOffline = false, showSaveButton = fa
           </div>
         )}
       </div>
-      
+
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
           <CardTitle className="text-lg line-clamp-2">{event.title}</CardTitle>
@@ -70,33 +70,33 @@ export function OfflineEventCard({ event, isOffline = false, showSaveButton = fa
             </Badge>
           )}
         </div>
-        
+
         {event.categoryName && (
           <Badge variant="outline" className="mt-1 w-fit">
             {event.categoryName}
           </Badge>
         )}
       </CardHeader>
-      
+
       <CardContent className="pb-3 flex-grow">
         <div className="space-y-2 text-sm">
           <div className="flex items-start">
             <Calendar className="h-4 w-4 mr-2 mt-0.5 text-gray-500" />
             <span>{formatDate(new Date(event.startDate))}</span>
           </div>
-          
+
           <div className="flex items-start">
             <Clock className="h-4 w-4 mr-2 mt-0.5 text-gray-500" />
             <span>{formatTime(new Date(event.startDate))}</span>
           </div>
-          
+
           {event.address && (
             <div className="flex items-start">
               <MapPin className="h-4 w-4 mr-2 mt-0.5 text-gray-500" />
               <span className="line-clamp-1">{event.address}</span>
             </div>
           )}
-          
+
           {event.attendeeCount !== undefined && (
             <div className="flex items-start">
               <Users className="h-4 w-4 mr-2 mt-0.5 text-gray-500" />
@@ -108,7 +108,7 @@ export function OfflineEventCard({ event, isOffline = false, showSaveButton = fa
           )}
         </div>
       </CardContent>
-      
+
       <CardFooter className="pt-0">
         <div className="w-full flex gap-2">
           <Button asChild className="w-full">
@@ -116,7 +116,7 @@ export function OfflineEventCard({ event, isOffline = false, showSaveButton = fa
               View Details
             </Link>
           </Button>
-          
+
           {isOffline && (
             <Button variant="outline" size="icon" title="Sync this event">
               <Download className="h-4 w-4" />

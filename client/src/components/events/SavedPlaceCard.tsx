@@ -134,3 +134,110 @@ export function SavedPlaceCard({ place }: SavedPlaceCardProps) {
     </Card>
   );
 }
+import { useState } from "react";
+import { Link } from "wouter";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Bookmark, MapPin, Star } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+interface SavedPlaceCardProps {
+  place: any;
+}
+
+export function SavedPlaceCard({ place }: SavedPlaceCardProps) {
+  const [isSaved, setIsSaved] = useState(true);
+  const queryClient = useQueryClient();
+
+  // Unsave place mutation
+  const unsaveMutation = useMutation({
+    mutationFn: () => {
+      return fetch(`/api/places/${place.id}/save`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }).then((res) => {
+        if (!res.ok) throw new Error("Failed to unsave place");
+        return res.json();
+      });
+    },
+    onSuccess: () => {
+      setIsSaved(false);
+      // Invalidate saved places query to refresh the list
+      queryClient.invalidateQueries({ queryKey: ["/api/user/saved-places"] });
+    },
+  });
+
+  const handleUnsave = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    unsaveMutation.mutate();
+  };
+
+  return (
+    <Card className="overflow-hidden h-full flex flex-col">
+      <div className="relative h-40">
+        {place.imageUrls && place.imageUrls.length > 0 ? (
+          <img
+            src={place.imageUrls[0]}
+            alt={place.name}
+            className="w-full h-full object-cover"
+          />
+        ) : place.imageUrl ? (
+          <img
+            src={place.imageUrl}
+            alt={place.name}
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+            <MapPin className="h-10 w-10 text-gray-400" />
+          </div>
+        )}
+        
+        <Button
+          onClick={handleUnsave}
+          variant="ghost"
+          size="icon"
+          className="absolute top-2 right-2 bg-white/80 hover:bg-white"
+        >
+          <Bookmark className={`h-5 w-5 ${isSaved ? "fill-primary" : ""}`} />
+        </Button>
+      </div>
+      
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg line-clamp-1">{place.name}</CardTitle>
+      </CardHeader>
+      
+      <CardContent className="pb-2 flex-grow">
+        <div className="flex items-center space-x-1 text-sm">
+          <Star className="h-4 w-4 text-yellow-500" />
+          <span className="text-sm">
+            {place.rating || "4.5"} 
+            <span className="text-gray-500 text-xs ml-1">
+              ({place.reviewCount || 0} reviews)
+            </span>
+          </span>
+        </div>
+        
+        <p className="text-sm text-gray-600 mt-2 line-clamp-2">
+          {place.description || "No description available."}
+        </p>
+        
+        <div className="flex items-center text-xs text-gray-500 mt-2">
+          <MapPin className="h-3 w-3 mr-1" />
+          <span className="line-clamp-1">{place.address}</span>
+        </div>
+      </CardContent>
+      
+      <CardFooter className="pt-0">
+        <Button asChild variant="outline" size="sm" className="w-full">
+          <Link href={`/events/places/${place.id}`}>
+            View Details
+          </Link>
+        </Button>
+      </CardFooter>
+    </Card>
+  );
+}

@@ -75,13 +75,13 @@ function Router() {
       <Route path="/auth">
         <AuthPage />
       </Route>
-      <ProtectedRoute path="/profile" component={ProfilePage} />
+      <ProtectedRoute path="/profile/:tab?" component={ProfilePage} />
       <ProtectedRoute path="/events" component={EventsPage} />
       <ProtectedRoute path="/create-event" component={CreateEventPage} />
       <ProtectedRoute path="/community" component={CommunityPage} />
       <ProtectedRoute path="/chat" component={ChatPage} />
       <ProtectedRoute path="/search" component={SearchPage} />
-      <Route path="/saved" component={SavedPage} /> {/* Added route for SavedPage */}
+      <ProtectedRoute path="/saved" component={SavedPage} /> {/* Added route for SavedPage */}
       <Route>
         <NotFound />
       </Route>
