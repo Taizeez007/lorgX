@@ -18,12 +18,14 @@ const CreateEventPage = lazy(() => import("@/pages/create-event-page"));
 const CommunityPage = lazy(() => import("@/pages/community-page"));
 const ChatPage = lazy(() => import("@/pages/chat-page"));
 const SearchPage = lazy(() => import("@/pages/search-page"));
+const SavedPage = lazy(() => import("@/pages/saved-page")); // Added import for SavedPage
+
 
 // Network status indicator component
 function NetworkStatus() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showRefresh, setShowRefresh] = useState(false);
-  
+
   useEffect(() => {
     function updateOnlineStatus() {
       setIsOnline(navigator.onLine);
@@ -34,18 +36,18 @@ function NetworkStatus() {
         return () => clearTimeout(timer);
       }
     }
-    
+
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
-    
+
     return () => {
       window.removeEventListener('online', updateOnlineStatus);
       window.removeEventListener('offline', updateOnlineStatus);
     };
   }, []);
-  
+
   if (isOnline && !showRefresh) return null;
-  
+
   return (
     <div className="fixed bottom-4 right-4 z-50">
       {!isOnline ? (
@@ -79,6 +81,7 @@ function Router() {
       <ProtectedRoute path="/community" component={CommunityPage} />
       <ProtectedRoute path="/chat" component={ChatPage} />
       <ProtectedRoute path="/search" component={SearchPage} />
+      <Route path="/saved" component={SavedPage} /> {/* Added route for SavedPage */}
       <Route>
         <NotFound />
       </Route>
@@ -93,7 +96,7 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner";
 function InstallPWA() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallButton, setShowInstallButton] = useState(false);
-  
+
   useEffect(() => {
     window.addEventListener('beforeinstallprompt', (e) => {
       // Prevent Chrome 67 and earlier from automatically showing the prompt
@@ -102,20 +105,20 @@ function InstallPWA() {
       setDeferredPrompt(e);
       setShowInstallButton(true);
     });
-    
+
     window.addEventListener('appinstalled', () => {
       // Log app installed
       console.log('PWA was installed');
       setShowInstallButton(false);
     });
   }, []);
-  
+
   const handleInstallClick = () => {
     if (!deferredPrompt) return;
-    
+
     // Show the install prompt
     deferredPrompt.prompt();
-    
+
     // Wait for the user to respond to the prompt
     deferredPrompt.userChoice.then((choiceResult: { outcome: string }) => {
       if (choiceResult.outcome === 'accepted') {
@@ -127,9 +130,9 @@ function InstallPWA() {
       setShowInstallButton(false);
     });
   };
-  
+
   if (!showInstallButton) return null;
-  
+
   return (
     <div className="fixed bottom-4 left-4 z-50">
       <button 

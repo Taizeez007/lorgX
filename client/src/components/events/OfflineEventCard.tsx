@@ -11,13 +11,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar, MapPin, Users, Clock, WifiOff, Download } from 'lucide-react';
 import { formatDate, formatTime } from '@/lib/utils';
+import { SaveButton } from './SaveButton';
 
 interface OfflineEventCardProps {
   event: any;
   isOffline?: boolean;
+  showSaveButton?: boolean;
 }
 
-export function OfflineEventCard({ event, isOffline = false }: OfflineEventCardProps) {
+export function OfflineEventCard({ event, isOffline = false, showSaveButton = false }: OfflineEventCardProps) {
   return (
     <Card className="h-full flex flex-col overflow-hidden group hover:shadow-md transition-shadow">
       <div className="relative">
@@ -29,6 +31,17 @@ export function OfflineEventCard({ event, isOffline = false }: OfflineEventCardP
             <WifiOff className="h-3 w-3" />
             Offline
           </Badge>
+        )}
+        
+        {showSaveButton && (
+          <div className="absolute top-2 right-2 z-10">
+            <SaveButton 
+              itemId={event.id}
+              itemType="event"
+              variant="ghost"
+              className="bg-white/80 hover:bg-white h-8 w-8 rounded-full"
+            />
+          </div>
         )}
         
         {event.imageUrl ? (

@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { Loader2, Music, Utensils, GraduationCap, Briefcase, Palette, Activity, Globe, Plus, Users, MessageSquare, UserPlus } from "lucide-react";
+import { Loader2, Music, Utensils, GraduationCap, Briefcase, Palette, Activity, Globe, Plus, Users, MessageSquare, UserPlus, Bookmark } from "lucide-react";
 
 interface Connection {
   id: number;
@@ -27,19 +27,19 @@ interface Community {
 export default function SidebarLeft() {
   const [location] = useLocation();
   const { user } = useAuth();
-  
+
   // Fetch connection requests
   const { data: connectionRequests, isLoading: isRequestsLoading } = useQuery({
     queryKey: ["/api/connections/requests"],
     enabled: !!user,
   });
-  
+
   // Fetch user communities
   const { data: userCommunities, isLoading: isCommunitiesLoading } = useQuery({
     queryKey: ["/api/communities/user"],
     enabled: !!user,
   });
-  
+
   // Icons for each category
   const categoryIcons: Record<string, JSX.Element> = {
     "Music": <Music className="w-5 h-5 mr-2" />,
@@ -50,7 +50,7 @@ export default function SidebarLeft() {
     "Sports": <Activity className="w-5 h-5 mr-2" />,
     "Travel": <Globe className="w-5 h-5 mr-2" />,
   };
-  
+
   return (
     <div className="hidden md:block w-56 lg:w-64 shrink-0">
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
@@ -95,9 +95,17 @@ export default function SidebarLeft() {
               Messages
             </Button>
           </Link>
+          <Link href="/saved">
+            <Button
+              variant={location === '/saved' ? "default" : "ghost"}
+              className={`w-full justify-start ${location === '/saved' ? 'bg-primary' : ''}`}
+            >
+              Saved Items
+            </Button>
+          </Link>
         </div>
       </div>
-      
+
       {user && (
         <>
           {/* Connection Requests */}
@@ -143,7 +151,7 @@ export default function SidebarLeft() {
               <p className="text-xs text-gray-500">No pending requests</p>
             )}
           </div>
-          
+
           {/* My Communities */}
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center justify-between mb-4">
@@ -154,7 +162,7 @@ export default function SidebarLeft() {
                 </Button>
               </Link>
             </div>
-            
+
             {isCommunitiesLoading ? (
               <div className="flex justify-center py-2">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
