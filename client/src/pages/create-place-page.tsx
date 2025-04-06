@@ -42,7 +42,7 @@ const placeSchema = z.object({
   name: z.string().min(3, "Name must be at least 3 characters"),
   description: z.string().min(10, "Description must be at least 10 characters"),
   address: z.string().min(5, "Address must be at least 5 characters"),
-  capacity: z.coerce.number().min(1, "Capacity must be at least 1"),
+  capacity: z.coerce.number().min(1).optional(),
   categoryId: z.coerce.number().min(1, "Please select a category"),
   placeType: z.string().min(1, "Please enter a place type"),
   imageUrls: z.array(z.string()).min(1, "At least one image is required"),
@@ -343,9 +343,31 @@ export default function CreatePlacePage() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Place Type</FormLabel>
-                              <FormControl>
-                                <Input placeholder="e.g., Concert Hall, Conference Room" {...field} />
-                              </FormControl>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select place type" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="Restaurant">Restaurant</SelectItem>
+                                  <SelectItem value="Cafe">Cafe</SelectItem>
+                                  <SelectItem value="Hotel">Hotel</SelectItem>
+                                  <SelectItem value="Lounge">Lounge</SelectItem>
+                                  <SelectItem value="Concert Hall">Concert Hall</SelectItem>
+                                  <SelectItem value="Conference Room">Conference Room</SelectItem>
+                                  <SelectItem value="Theater">Theater</SelectItem>
+                                  <SelectItem value="Gallery">Gallery</SelectItem>
+                                  <SelectItem value="Outdoor Venue">Outdoor Venue</SelectItem>
+                                  <SelectItem value="Sports Facility">Sports Facility</SelectItem>
+                                  <SelectItem value="Banquet Hall">Banquet Hall</SelectItem>
+                                  <SelectItem value="Community Center">Community Center</SelectItem>
+                                  <SelectItem value="Other">Other</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>
+                                The type of venue or place
+                              </FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -377,7 +399,7 @@ export default function CreatePlacePage() {
                           name="capacity"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Capacity</FormLabel>
+                              <FormLabel>Capacity (Optional)</FormLabel>
                               <FormControl>
                                 <Input 
                                   type="number" 
